@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>WIZARD TOOLZ | Security</title>
+<meta name="theme-color" content="#050507">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="apple-touch-icon" href="favicon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050507;--bg2:#0c0c10;--border:rgba(255,255,255,.08);--text:#ececf0;--muted:#8b8b96;--white:#fff;--gold:#c8a84b}
+*{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;line-height:1.7}
+a{text-decoration:none;color:inherit}.container{width:100%;max-width:980px;margin:0 auto;padding:0 24px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;padding:12px 22px;font-size:14px;font-weight:600}
+.btn-primary{background:var(--gold);color:#000}.btn-outline{border:1px solid var(--border);background:rgba(255,255,255,.03)}
+nav{position:sticky;top:0;background:rgba(5,5,7,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
+.nav-inner{min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px}.nav-logo{display:flex;align-items:center;gap:12px;font-family:'Cinzel',serif;font-size:20px;font-weight:700}.nav-logo img{width:40px;height:40px;border-radius:10px}
+.hero,.section{padding:56px 0}.tag{display:inline-block;padding:5px 12px;border-radius:999px;border:1px solid rgba(200,168,75,.25);color:var(--gold);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+h1,h2{font-family:'Cinzel',serif;color:var(--white);line-height:1.15}.hero h1{font-size:clamp(34px,6vw,62px);margin:18px 0 12px}.section h2{font-size:clamp(28px,4vw,42px);margin-bottom:14px}
+p{color:var(--muted);font-size:16px}.stack{display:grid;gap:18px;margin-top:28px}.card{background:var(--bg2);border:1px solid var(--border);border-radius:22px;padding:24px}
+.card h3{font-family:'Cinzel',serif;font-size:20px;margin-bottom:10px}.card ul{padding-left:18px;color:var(--muted)}.card li{margin:8px 0}
+footer{padding:28px 0 52px;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<nav>
+  <div class="container nav-inner">
+    <a class="nav-logo" href="index.html"><img src="trendingtoolz logo.png" alt="Wizard Toolz"><span>Wizard Toolz</span></a>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a class="btn btn-outline" href="index.html">Main Site</a>
+      <a class="btn btn-outline" href="privacy.html">Privacy</a>
+      <a class="btn btn-outline" href="terms.html">Terms</a>
+      <a class="btn btn-primary" href="https://t.me/wizard_toolz" target="_blank">Support</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <span class="tag">Security</span>
+    <h1>Security Guidance</h1>
+    <p>Wizard Toolz includes features that can work with real wallets, real funds, and real automation. That makes clear user safety habits essential.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container stack">
+    <div class="card">
+      <h3>Treat Automation Wallets As Hot Wallets</h3>
+      <p>If you import a key, paste a key, or fund a generated wallet for a feature, assume that wallet is operating as a hot wallet in a live automation environment.</p>
+    </div>
+    <div class="card">
+      <h3>Fund Only What You Intend To Use</h3>
+      <p>Do not overfund automation wallets. Keep only the amount needed for the feature you are running, plus a sensible gas buffer where appropriate.</p>
+    </div>
+    <div class="card">
+      <h3>Double-Check Token Addresses</h3>
+      <p>Always verify the mint / CA before funding, launching, buying, or selling. Similar names, similar tickers, and copycat addresses are common in Solana trading environments.</p>
+    </div>
+    <div class="card">
+      <h3>Separate Sensitive Wallets</h3>
+      <p>Use dedicated wallets for automation. Avoid mixing your main treasury, personal holdings, or long-term storage wallets into short-term trading or launch flows.</p>
+    </div>
+    <div class="card">
+      <h3>Support-Assisted Services</h3>
+      <p>For services that require support coordination, always verify timing, availability, and expected delivery before assuming instant execution.</p>
+    </div>
+    <div class="card">
+      <h3>Need Help?</h3>
+      <p>If you are unsure how to use a feature safely, contact support at <a href="https://t.me/wizard_toolz" target="_blank">@wizard_toolz</a> before funding or starting the flow.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">Wizard Toolz Security • <a href="https://x.com/wizardtoolz" target="_blank">x.com/wizardtoolz</a> • <a href="https://t.me/wizard_toolz" target="_blank">@wizard_toolz</a></div>
+</footer>
+</body>
+</html>

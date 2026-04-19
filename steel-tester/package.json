@@ -1,0 +1,38 @@
+{
+  "name": "steel-tester",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "logs:rotate": "node rotate-logs.mjs",
+    "start": "node start-render.mjs",
+    "start:local": "powershell -ExecutionPolicy Bypass -File .\\start-all.ps1",
+    "test": "node test.js",
+    "bot": "node bot.js",
+    "runner": "node safe-steel-runner.js",
+    "worker": "node worker-bot.js"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@pump-fun/pump-sdk": "^1.32.0",
+    "@pump-fun/pump-swap-sdk": "^1.14.1",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.3",
+    "dotenv": "^17.4.0",
+    "grammy": "^1.38.3",
+    "playwright": "^1.59.1",
+    "sharp": "^0.34.5",
+    "steel-sdk": "^0.18.0"
+  },
+  "description": "Professional Telegram trading and automation stack for Trending Toolz.",
+  "main": "test.js",
+  "keywords": [
+    "telegram",
+    "solana",
+    "trading-bot",
+    "automation",
+    "render"
+  ],
+  "author": "Trending Toolz",
+  "license": "ISC"
+}

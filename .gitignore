@@ -1,0 +1,37 @@
+# Node / package managers
+steel-tester/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and secrets
+.venv/
+__pycache__/
+*.pyc
+*.session
+*.session-journal
+.telegram_login_pending.json
+steel-tester/.env
+steel-tester/.env.local
+steel-tester/.env.*.local
+
+# Runtime state
+data/telegram-store.json
+steel-tester/data/telegram-store.json
+steel-tester/logs/
+steel-tester/*.log
+steel-tester/runtime.current.log
+steel-tester/runtime.current.err
+steel-tester/runtime.current.err.log
+steel-tester/runtime.current.out
+steel-tester/runtime.current.out.log
+steel-tester/outputs/
+
+# Local debug / temporary files
+steel-tester/assets/*.har
+steel-tester/tmp-*.js
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

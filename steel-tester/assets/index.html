@@ -1,0 +1,1920 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>WIZARD TOOLZ</title>
+<meta name="theme-color" content="#050507">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="apple-touch-icon" href="favicon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   TOKENS & RESET
+   ============================================================ */
+:root {
+  --bg:        #050507;
+  --bg2:       #0c0c10;
+  --bg3:       #111116;
+  --border:    rgba(255,255,255,0.07);
+  --border2:   rgba(255,255,255,0.12);
+  --text:      #e8e8ec;
+  --muted:     #777780;
+  --white:     #ffffff;
+  --gold:      #c8a84b;
+  --gold-dim:  #8c7233;
+  --green:     #3ddc84;
+  --green-dim: #1e6b41;
+  --red:       #ff4d4d;
+  --glow-gold: rgba(200,168,75,0.18);
+  --glow-green:rgba(61,220,132,0.15);
+  --radius:    12px;
+  --radius-lg: 20px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'DM Sans',sans-serif;
+  font-size:16px;
+  line-height:1.6;
+  overflow-x:hidden;
+}
+img{max-width:100%;display:block;}
+a{color:inherit;text-decoration:none;}
+button{cursor:pointer;border:none;background:none;font-family:inherit;}
+
+/* ============================================================
+   UTILITY
+   ============================================================ */
+.container{width:100%;max-width:1120px;margin:0 auto;padding:0 24px;}
+.tag{
+  display:inline-block;
+  font-family:'DM Mono',monospace;
+  font-size:11px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--gold);
+  border:1px solid var(--gold-dim);
+  padding:4px 12px;
+  border-radius:100px;
+  margin-bottom:16px;
+}
+.section-title{
+  font-family:'Cinzel',serif;
+  font-size:clamp(28px,4vw,48px);
+  font-weight:700;
+  color:var(--white);
+  line-height:1.15;
+}
+.section-sub{
+  font-size:17px;
+  color:var(--muted);
+  max-width:560px;
+  margin-top:12px;
+}
+.divider{
+  width:100%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--border2),transparent);
+  margin:0;
+}
+
+.burn-widget{
+  position:fixed;
+  right:18px;
+  bottom:18px;
+  width:min(320px, calc(100vw - 36px));
+  z-index:120;
+  background:rgba(12,12,16,0.92);
+  border:1px solid rgba(200,168,75,0.22);
+  box-shadow:0 20px 80px rgba(0,0,0,0.45), 0 0 32px rgba(200,168,75,0.08);
+  border-radius:18px;
+  backdrop-filter:blur(22px);
+  -webkit-backdrop-filter:blur(22px);
+  overflow:hidden;
+}
+.burn-widget-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 16px 10px;
+  border-bottom:1px solid var(--border);
+}
+.burn-widget-title{
+  font-family:'Cinzel',serif;
+  font-size:15px;
+  color:var(--white);
+}
+.burn-widget-chip{
+  font-family:'DM Mono',monospace;
+  font-size:10px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--gold);
+  border:1px solid rgba(200,168,75,0.25);
+  background:rgba(200,168,75,0.08);
+  padding:4px 8px;
+  border-radius:999px;
+}
+.burn-widget-body{padding:14px 16px 16px;}
+.burn-widget-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:12px;
+}
+.burn-stat{
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px;
+}
+.burn-stat-label{
+  display:block;
+  font-size:11px;
+  color:var(--muted);
+  margin-bottom:6px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.burn-stat-value{
+  display:block;
+  color:var(--white);
+  font-size:20px;
+  font-weight:700;
+  line-height:1.2;
+}
+.burn-widget-progress{
+  height:10px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.06);
+  overflow:hidden;
+  margin:12px 0 10px;
+}
+.burn-widget-progress > span{
+  display:block;
+  height:100%;
+  width:0%;
+  background:linear-gradient(90deg, #c8a84b, #f0d37b);
+  box-shadow:0 0 24px rgba(200,168,75,0.28);
+  transition:width .35s ease;
+}
+.burn-widget-meta{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  font-size:12px;
+  color:var(--muted);
+}
+.burn-widget-meta code{
+  color:var(--text);
+  font-family:'DM Mono',monospace;
+  font-size:11px;
+  word-break:break-all;
+}
+.burn-widget-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
+.burn-widget-note{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:10px;
+}
+.tokenomics-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:18px;
+  margin-top:44px;
+}
+.tokenomics-card{
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:26px;
+}
+.tokenomics-card h3{
+  font-family:'Cinzel',serif;
+  font-size:18px;
+  color:var(--white);
+  margin-bottom:12px;
+}
+.tokenomics-card p{
+  font-size:14px;
+  color:var(--muted);
+  line-height:1.7;
+}
+.tokenomics-lines{
+  list-style:none;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top:16px;
+}
+.tokenomics-lines li{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  font-size:13px;
+  color:var(--text);
+  padding-top:10px;
+  border-top:1px solid var(--border);
+}
+.tokenomics-lines span:last-child{
+  color:var(--gold);
+  font-family:'DM Mono',monospace;
+  font-size:12px;
+  text-align:right;
+}
+.tokenomics-banner{
+  margin-top:28px;
+  border:1px solid rgba(200,168,75,0.18);
+  border-radius:20px;
+  background:linear-gradient(180deg, rgba(200,168,75,0.08), rgba(255,255,255,0.02));
+  padding:24px 26px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:20px;
+  flex-wrap:wrap;
+}
+.tokenomics-banner h3{
+  font-family:'Cinzel',serif;
+  font-size:22px;
+  color:var(--white);
+  margin-bottom:8px;
+}
+.tokenomics-banner p{
+  max-width:720px;
+  color:var(--muted);
+  font-size:15px;
+}
+.chat-widget{
+  position:fixed;
+  left:18px;
+  bottom:18px;
+  width:min(320px, calc(100vw - 36px));
+  z-index:121;
+}
+.chat-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  padding:14px 18px;
+  border-radius:999px;
+  background:linear-gradient(180deg,#2497f3,#1f7ed1);
+  color:#fff;
+  box-shadow:0 18px 60px rgba(20,94,163,0.35);
+  font-weight:700;
+  font-size:14px;
+}
+.chat-icon{
+  width:24px;
+  height:24px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  background:rgba(255,255,255,0.18);
+  color:#fff;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.04em;
+  flex-shrink:0;
+}
+.chat-icon svg{
+  width:24px;
+  height:24px;
+  display:block;
+  flex-shrink:0;
+}
+.chat-panel{
+  margin-top:12px;
+  background:rgba(12,12,16,0.96);
+  border:1px solid rgba(36,151,243,0.25);
+  border-radius:20px;
+  box-shadow:0 20px 70px rgba(0,0,0,0.45);
+  overflow:hidden;
+  display:none;
+}
+.chat-panel.open{display:block}
+.chat-panel-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 16px 10px;
+  border-bottom:1px solid var(--border);
+}
+.chat-panel-title{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-family:'Cinzel',serif;
+  color:var(--white);
+  font-size:15px;
+}
+.chat-panel-body{
+  padding:16px;
+}
+.chat-panel-body p{
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.7;
+}
+.chat-panel-actions{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top:14px;
+}
+.chat-close{
+  color:var(--muted);
+  font-size:18px;
+  line-height:1;
+}
+@media(max-width:768px){
+  .burn-widget{
+    left:12px;
+    right:12px;
+    bottom:88px;
+    width:auto;
+  }
+  .chat-widget{
+    left:12px;
+    right:12px;
+    bottom:12px;
+    width:auto;
+  }
+  .tokenomics-grid{grid-template-columns:1fr;}
+  .tokenomics-banner{padding:22px;}
+  body{padding-bottom:240px;}
+}
+
+/* BUTTONS */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:13px 26px;border-radius:100px;
+  font-size:14px;font-weight:600;letter-spacing:.02em;
+  transition:all .2s ease;
+  white-space:nowrap;
+}
+.btn-primary{
+  background:var(--gold);
+  color:#000;
+}
+.btn-primary:hover{background:#d4b55c;transform:translateY(-1px);box-shadow:0 8px 32px rgba(200,168,75,0.3);}
+.btn-outline{
+  border:1px solid var(--border2);
+  color:var(--text);
+  background:rgba(255,255,255,0.03);
+}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold);background:rgba(200,168,75,0.05);}
+.btn-green{
+  background:var(--green);
+  color:#000;
+}
+.btn-green:hover{background:#4deb94;transform:translateY(-1px);box-shadow:0 8px 32px rgba(61,220,132,0.3);}
+
+/* CARDS */
+.card{
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:28px;
+  transition:border-color .25s,box-shadow .25s,transform .25s;
+}
+.card:hover{
+  border-color:rgba(200,168,75,0.3);
+  box-shadow:0 0 40px rgba(200,168,75,0.06);
+  transform:translateY(-3px);
+}
+.card-icon{
+  width:48px;height:48px;
+  border-radius:12px;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;
+  margin-bottom:16px;
+}
+.card h3{
+  font-family:'Cinzel',serif;
+  font-size:17px;
+  font-weight:600;
+  color:var(--white);
+  margin-bottom:8px;
+}
+.card p{font-size:14px;color:var(--muted);line-height:1.65;}
+
+/* FEATURE IMAGE CARDS */
+.feat-card{
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  overflow:hidden;
+  transition:border-color .25s,box-shadow .25s,transform .25s;
+  display:flex;flex-direction:column;
+}
+.feat-card:hover{
+  border-color:rgba(200,168,75,0.3);
+  box-shadow:0 0 48px rgba(200,168,75,0.07);
+  transform:translateY(-4px);
+}
+.feat-card-img{
+  width:100%;aspect-ratio:1/1;
+  object-fit:cover;
+  opacity:.92;
+  filter:brightness(.95);
+  transition:opacity .3s;
+}
+.feat-card:hover .feat-card-img{opacity:1;}
+.feat-card-body{padding:22px 24px 24px;}
+.feat-card-body h3{
+  font-family:'Cinzel',serif;
+  font-size:16px;font-weight:700;
+  color:var(--white);margin-bottom:8px;
+}
+.feat-card-body p{font-size:13.5px;color:var(--muted);line-height:1.65;}
+.feat-badge{
+  display:inline-block;
+  font-family:'DM Mono',monospace;
+  font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;
+  padding:3px 10px;border-radius:100px;
+  margin-bottom:10px;
+}
+.badge-gold{background:rgba(200,168,75,0.12);color:var(--gold);border:1px solid var(--gold-dim);}
+.badge-green{background:rgba(61,220,132,0.1);color:var(--green);border:1px solid var(--green-dim);}
+
+/* ============================================================
+   NOISE / STAR BACKGROUND
+   ============================================================ */
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(200,168,75,0.04) 0%, transparent 50%),
+    radial-gradient(circle at 85% 80%, rgba(61,220,132,0.03) 0%, transparent 50%);
+  pointer-events:none;z-index:0;
+}
+
+/* ============================================================
+   NAV
+   ============================================================ */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  background:rgba(5,5,7,0.85);
+  border-bottom:1px solid var(--border);
+  transition:border-color .3s;
+}
+.nav-inner{
+  display:flex;align-items:center;justify-content:space-between;
+  height:64px;gap:24px;
+}
+.nav-logo{
+  display:flex;align-items:center;gap:10px;
+  font-family:'Cinzel',serif;
+  font-size:18px;font-weight:700;
+  color:var(--white);
+}
+.nav-logo img{width:36px;height:36px;object-fit:contain;border-radius:8px;}
+.nav-links{
+  display:flex;align-items:center;gap:28px;
+  list-style:none;
+}
+.nav-links a{
+  font-size:13.5px;font-weight:500;color:var(--muted);
+  transition:color .2s;
+}
+.nav-links a:hover{color:var(--white);}
+.nav-ctas{display:flex;gap:10px;align-items:center;}
+.hamburger{display:none;flex-direction:column;gap:5px;padding:4px;}
+.hamburger span{width:22px;height:2px;background:var(--text);border-radius:2px;transition:.3s;}
+
+@media(max-width:768px){
+  .nav-links{display:none;}
+  .hamburger{display:flex;}
+  .nav-ctas .btn-outline{display:none;}
+  .nav-inner{height:auto;min-height:72px;padding:10px 0;}
+  .nav-ctas{flex-wrap:wrap;justify-content:flex-end;}
+}
+
+/* ============================================================
+   HERO
+   ============================================================ */
+#hero{
+  min-height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;
+  padding:120px 24px 80px;
+  position:relative;
+  overflow:hidden;
+}
+.hero-glow{
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-55%);
+  width:900px;height:600px;
+  background:radial-gradient(ellipse at center, rgba(200,168,75,0.08) 0%, transparent 65%);
+  pointer-events:none;
+}
+.hero-wizard{
+  width:clamp(200px,28vw,320px);
+  margin:0 auto 32px;
+  filter:drop-shadow(0 0 60px rgba(200,168,75,0.2));
+  animation:float 6s ease-in-out infinite;
+}
+@keyframes float{
+  0%,100%{transform:translateY(0);}
+  50%{transform:translateY(-12px);}
+}
+.hero-eyebrow{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  margin-bottom:20px;
+}
+.live-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 8px var(--green);
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.hero-eyebrow-text{
+  font-family:'DM Mono',monospace;
+  font-size:12px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--green);
+}
+.hero-title{
+  font-family:'Cinzel',serif;
+  font-size:clamp(36px,6.5vw,80px);
+  font-weight:900;
+  color:var(--white);
+  line-height:1.05;
+  letter-spacing:-.01em;
+  margin-bottom:12px;
+}
+.hero-title span{
+  background:linear-gradient(135deg,var(--gold),#e8c96a,var(--gold));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hero-sub{
+  font-size:clamp(16px,2vw,20px);
+  color:var(--muted);
+  max-width:580px;
+  margin:0 auto 36px;
+}
+.hero-ctas{
+  display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:52px;
+}
+.hero-ca{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--bg3);border:1px solid var(--border2);
+  border-radius:100px;padding:10px 18px;
+  font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);
+  transition:border-color .2s;
+}
+.hero-ca:hover{border-color:var(--gold-dim);}
+.hero-ca-label{color:var(--gold);font-size:10px;letter-spacing:.1em;text-transform:uppercase;}
+
+/* ============================================================
+   TRUST STRIP
+   ============================================================ */
+#trust{
+  border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  padding:20px 0;
+  background:var(--bg2);
+  overflow:hidden;
+}
+.trust-track{
+  display:flex;gap:48px;align-items:center;
+  animation:marquee 30s linear infinite;
+  white-space:nowrap;
+  width:max-content;
+}
+@keyframes marquee{0%{transform:translateX(0);}100%{transform:translateX(-50%);}};
+.trust-item{
+  display:flex;align-items:center;gap:10px;
+  font-size:13px;font-weight:500;color:var(--muted);
+  flex-shrink:0;
+}
+.trust-item .ti{font-size:18px;}
+.trust-item strong{color:var(--text);}
+.trust-sep{color:var(--border2);font-size:20px;flex-shrink:0;}
+
+/* ============================================================
+   FEATURES GRID
+   ============================================================ */
+#features{padding:100px 0;}
+.features-header{text-align:center;margin-bottom:64px;}
+.features-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:20px;
+}
+
+/* ============================================================
+   DEEP FEATURE SECTIONS
+   ============================================================ */
+.deep-section{
+  padding:80px 0;
+  border-top:1px solid var(--border);
+}
+.deep-inner{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:60px;align-items:center;
+}
+.deep-inner.reverse{direction:rtl;}
+.deep-inner.reverse>*{direction:ltr;}
+.deep-img-wrap{
+  border-radius:var(--radius-lg);
+  overflow:hidden;
+  border:1px solid var(--border);
+  background:var(--bg2);
+}
+.deep-img-wrap img{width:100%;display:block;}
+.deep-content .tag{display:inline-block;}
+.deep-content h2{
+  font-family:'Cinzel',serif;
+  font-size:clamp(22px,3vw,36px);
+  font-weight:700;color:var(--white);
+  margin-bottom:14px;line-height:1.2;
+}
+.deep-content p{font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:12px;}
+.deep-pills{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0;}
+.pill{
+  font-size:12.5px;font-weight:500;
+  background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);padding:5px 14px;border-radius:100px;
+}
+.pill-gold{border-color:var(--gold-dim);color:var(--gold);background:rgba(200,168,75,0.08);}
+.pill-green{border-color:var(--green-dim);color:var(--green);background:rgba(61,220,132,0.08);}
+
+@media(max-width:768px){
+  .deep-inner{grid-template-columns:1fr;gap:32px;}
+  .deep-inner.reverse{direction:ltr;}
+}
+
+/* ============================================================
+   PRICING / FEE SECTION
+   ============================================================ */
+#pricing{padding:100px 0;text-align:center;}
+.pricing-header{margin-bottom:56px;}
+.fee-compare{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:24px;max-width:720px;margin:0 auto 48px;
+}
+.fee-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:36px 32px;
+  position:relative;overflow:hidden;
+}
+.fee-card.featured{
+  border-color:var(--gold-dim);
+  background:linear-gradient(135deg,rgba(200,168,75,0.06),var(--bg2));
+  box-shadow:0 0 60px rgba(200,168,75,0.08);
+}
+.fee-card .fee-num{
+  font-family:'Cinzel',serif;font-size:52px;font-weight:900;
+  line-height:1;margin-bottom:8px;
+}
+.fee-card.featured .fee-num{color:var(--gold);}
+.fee-card:not(.featured) .fee-num{color:var(--muted);text-decoration:line-through;opacity:.6;}
+.fee-card .fee-label{font-size:13px;color:var(--muted);}
+.fee-card .fee-name{
+  font-family:'Cinzel',serif;font-size:15px;
+  font-weight:700;color:var(--white);margin-bottom:6px;
+}
+.fee-badge-top{
+  position:absolute;top:16px;right:16px;
+  background:var(--gold);color:#000;
+  font-size:10px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;padding:3px 10px;border-radius:100px;
+}
+@media(max-width:560px){.fee-compare{grid-template-columns:1fr;}}
+
+/* ============================================================
+   ROADMAP
+   ============================================================ */
+#roadmap{padding:100px 0;}
+.roadmap-header{text-align:center;margin-bottom:64px;}
+.roadmap-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:24px;
+}
+.rm-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:32px 28px;
+  position:relative;overflow:hidden;
+}
+.rm-card::before{
+  content:'';position:absolute;
+  top:0;left:0;right:0;height:2px;
+}
+.rm-card.phase1::before{background:linear-gradient(90deg,var(--green),transparent);}
+.rm-card.phase2::before{background:linear-gradient(90deg,var(--gold),transparent);}
+.rm-card.phase3::before{background:linear-gradient(90deg,#7c6fff,transparent);}
+.rm-phase{
+  font-family:'DM Mono',monospace;font-size:11px;
+  text-transform:uppercase;letter-spacing:.15em;
+  margin-bottom:10px;
+}
+.phase1 .rm-phase{color:var(--green);}
+.phase2 .rm-phase{color:var(--gold);}
+.phase3 .rm-phase{color:#7c6fff;}
+.rm-card h3{
+  font-family:'Cinzel',serif;font-size:18px;font-weight:700;
+  color:var(--white);margin-bottom:20px;
+}
+.rm-list{list-style:none;display:flex;flex-direction:column;gap:8px;}
+.rm-list li{
+  display:flex;align-items:center;gap:10px;
+  font-size:13.5px;color:var(--muted);
+}
+.rm-list li::before{
+  content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0;
+}
+.phase1 .rm-list li::before{background:var(--green);}
+.phase2 .rm-list li::before{background:var(--gold);}
+.phase3 .rm-list li::before{background:#7c6fff;}
+.rm-status{
+  display:inline-block;margin-top:20px;
+  font-size:11px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;padding:4px 12px;border-radius:100px;
+}
+.phase1 .rm-status{background:rgba(61,220,132,0.1);color:var(--green);border:1px solid var(--green-dim);}
+.phase2 .rm-status{background:rgba(200,168,75,0.1);color:var(--gold);border:1px solid var(--gold-dim);}
+.phase3 .rm-status{background:rgba(124,111,255,0.1);color:#7c6fff;border:1px solid rgba(124,111,255,0.3);}
+@media(max-width:768px){.roadmap-grid{grid-template-columns:1fr;}}
+
+/* ============================================================
+   FAQ
+   ============================================================ */
+#faq{padding:100px 0;}
+.faq-header{text-align:center;margin-bottom:60px;}
+.faq-grid{
+  max-width:760px;margin:0 auto;
+  display:flex;flex-direction:column;gap:4px;
+}
+.faq-item{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;
+}
+.faq-q{
+  width:100%;display:flex;align-items:center;justify-content:space-between;
+  padding:20px 24px;text-align:left;
+  font-size:15px;font-weight:600;color:var(--white);
+  transition:color .2s;gap:12px;
+}
+.faq-q:hover{color:var(--gold);}
+.faq-arrow{
+  font-size:18px;color:var(--muted);
+  transition:transform .25s;flex-shrink:0;
+}
+.faq-a{
+  max-height:0;overflow:hidden;
+  transition:max-height .35s ease,padding .25s;
+  padding:0 24px;
+  font-size:14.5px;color:var(--muted);line-height:1.7;
+}
+.faq-item.open .faq-a{max-height:300px;padding:0 24px 20px;}
+.faq-item.open .faq-arrow{transform:rotate(45deg);color:var(--gold);}
+
+/* ============================================================
+   CTA FOOTER
+   ============================================================ */
+#cta{
+  padding:100px 24px;
+  text-align:center;
+  position:relative;overflow:hidden;
+}
+#cta::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 60%,rgba(200,168,75,0.07) 0%,transparent 65%);
+  pointer-events:none;
+}
+.cta-wizard{
+  width:clamp(160px,20vw,240px);
+  margin:0 auto 32px;
+  filter:drop-shadow(0 0 40px rgba(200,168,75,0.25));
+}
+.cta-title{
+  font-family:'Cinzel',serif;
+  font-size:clamp(28px,5vw,56px);
+  font-weight:900;color:var(--white);
+  line-height:1.1;margin-bottom:16px;
+}
+.cta-title span{
+  background:linear-gradient(135deg,var(--gold),#e8c96a);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.cta-sub{font-size:17px;color:var(--muted);margin-bottom:36px;}
+.cta-btns{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:40px;}
+.cta-links{
+  display:flex;flex-wrap:wrap;gap:20px;justify-content:center;
+  font-size:13px;color:var(--muted);
+}
+.cta-links a:hover{color:var(--gold);}
+
+/* FOOTER */
+footer{
+  border-top:1px solid var(--border);
+  padding:32px 0;background:var(--bg2);
+}
+.footer-inner{
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:16px;
+}
+.footer-logo{
+  display:flex;align-items:center;gap:8px;
+  font-family:'Cinzel',serif;font-size:14px;font-weight:700;color:var(--muted);
+}
+.footer-logo img{width:28px;height:28px;object-fit:contain;border-radius:6px;opacity:.7;}
+.footer-links{display:flex;gap:20px;}
+.footer-links a{font-size:12.5px;color:var(--muted);transition:color .2s;}
+.footer-links a:hover{color:var(--text);}
+.footer-copy{font-size:12px;color:var(--muted);opacity:.5;}
+
+/* ============================================================
+   ADDITIONAL FEATURE SECTION
+   ============================================================ */
+#tools{padding:100px 0;}
+.tools-header{text-align:center;margin-bottom:64px;}
+.tools-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:24px;
+}
+
+/* SUBSCRIPTION SECTION */
+#subscriptions{padding:80px 0;border-top:1px solid var(--border);}
+.subs-header{text-align:center;margin-bottom:48px;}
+.subs-pills{
+  display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:36px;
+}
+.sub-pill{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:100px;padding:8px 18px;
+  font-size:13.5px;font-weight:500;color:var(--text);
+  transition:border-color .2s,color .2s;
+}
+.sub-pill:hover{border-color:var(--gold-dim);color:var(--gold);}
+
+/* ============================================================
+   COMMUNITY SECTION
+   ============================================================ */
+#community{
+  padding:80px 0;border-top:1px solid var(--border);
+  text-align:center;
+}
+.community-cards{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:20px;
+  max-width:900px;margin:48px auto 0;
+}
+.comm-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:32px 24px;
+  transition:border-color .25s,box-shadow .25s,transform .25s;
+}
+.comm-card:hover{
+  border-color:rgba(200,168,75,0.3);
+  box-shadow:0 0 40px rgba(200,168,75,0.06);
+  transform:translateY(-3px);
+}
+.comm-icon{font-size:36px;margin-bottom:14px;}
+.comm-card h3{
+  font-family:'Cinzel',serif;font-size:16px;
+  font-weight:700;color:var(--white);margin-bottom:8px;
+}
+.comm-card p{font-size:13px;color:var(--muted);margin-bottom:16px;}
+@media(max-width:640px){.community-cards{grid-template-columns:1fr;}}
+
+/* ============================================================
+   ANIMATIONS ON SCROLL
+   ============================================================ */
+.reveal{opacity:0;transform:translateY(28px);transition:opacity .6s ease,transform .6s ease;}
+.reveal.visible{opacity:1;transform:translateY(0);}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media(max-width:900px){
+  .roadmap-grid{grid-template-columns:1fr;}
+}
+@media(max-width:640px){
+  .hero-ctas{flex-direction:column;align-items:center;}
+  .btn{width:100%;justify-content:center;max-width:320px;}
+  .burn-widget-grid{grid-template-columns:1fr;}
+  .burn-stat-value{font-size:18px;}
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     NAV
+     ============================================================ -->
+<nav>
+  <div class="container nav-inner">
+    <a class="nav-logo" href="#">
+      <img src="trendingtoolz logo.png" alt="Wizard Toolz logo">
+      Wizard Toolz
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#pricing">Fees</a></li>
+      <li><a href="tokenomics.html">Tokenomics</a></li>
+      <li><a href="#roadmap">Roadmap</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+    <div class="nav-ctas">
+      <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank">Join Community</a>
+      <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Follow X</a>
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot ✦</a>
+    </div>
+    <button class="hamburger" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<section id="hero">
+  <div class="hero-glow"></div>
+  <div class="container" style="position:relative;z-index:1;">
+    <img src="trendingtoolz volume image.png" class="hero-wizard" alt="Wizard Toolz">
+    <div class="hero-eyebrow">
+      <span class="live-dot"></span>
+      <span class="hero-eyebrow-text">Live on Solana • Growth, Trading, and Launch Infrastructure</span>
+    </div>
+    <h1 class="hero-title">
+      Wizardtoolz
+    </h1>
+    <p class="hero-sub">
+      Volume. Visibility. Launches. Trading. Automation. Built for serious teams, serious traders, and real on-chart support.
+    </p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">
+        ✦ Open Telegram Bot
+      </a>
+      <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank">
+        Join Community
+      </a>
+      <a class="btn btn-outline" href="https://t.me/wizardtoolz_alerts" target="_blank">
+        🔔 Alerts Channel
+      </a>
+      <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">
+        𝕏 Follow X
+      </a>
+    </div>
+    <div class="hero-ca">
+      <span class="hero-ca-label">Token</span>
+      <span>Launching Soon</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     TRUST STRIP
+     ============================================================ -->
+<div id="trust">
+  <div class="trust-track" id="trustTrack">
+    <div class="trust-item"><span class="ti">🚀</span> <span>Reaction Booster</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">📈</span> <span>Volume Booster</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">🔥</span> <span>Burn Agent</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">⚡</span> <span>Sniper Wizard</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">✨</span> <span>Magic Sell</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">💎</span> <span>Bundle System</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">🎯</span> <span>Launch + Buy</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><strong style="color:var(--gold);">0.5% Fee</strong> <span>&mdash; half of competitors</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">👁️</span> <span>Wallet Tracker</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">🧾</span> <span>No Technical Skills Needed</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">🚀</span> <span>Reaction Booster</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">📈</span> <span>Volume Booster</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">🔥</span> <span>Burn Agent</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">⚡</span> <span>Sniper Wizard</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">✨</span> <span>Magic Sell</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">💎</span> <span>Bundle System</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">🎯</span> <span>Launch + Buy</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><strong style="color:var(--gold);">0.5% Fee</strong> <span>&mdash; half of competitors</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">👁️</span> <span>Wallet Tracker</span></div>
+    <div class="trust-sep">•</div>
+    <div class="trust-item"><span class="ti">🧾</span> <span>No Technical Skills Needed</span></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     FEATURES OVERVIEW
+     ============================================================ -->
+<section id="features">
+  <div class="container">
+    <div class="features-header reveal">
+      <span class="tag">The Toolkit</span>
+      <h2 class="section-title">Every Spell You Need.<br>One Platform.</h2>
+      <p class="section-sub">Wizard Toolz gives you a full suite of Solana growth, launch, trading, and utility tools. Simple on the surface, powerful underneath, and built to keep real value flowing back into the ecosystem.</p>
+    </div>
+    <div class="features-grid">
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz reaction image.png" class="feat-card-img" alt="Reaction Booster">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-green">Visibility</span>
+          <h3>Reaction Booster</h3>
+          <p>Boost your token's DexScreener reactions &mdash; rockets, fire, and more. Pick a package, send your link, done. Instant social proof that makes others stop and look.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz volume image.png" class="feat-card-img" alt="Volume Booster">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-gold">Trading</span>
+          <h3>Volume Booster</h3>
+          <p>Two modes: Organic (natural-looking activity) or Bundled (fast, aggressive momentum). Free trial available. Powerful automation that looks human.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz burn agent image.png" class="feat-card-img" alt="Burn Agent">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-gold">Automation</span>
+          <h3>Burn Agent</h3>
+          <p>Automatically turns creator reward flows into token buybacks and burns. Set it up once, and the wizard handles the rest &mdash; supporting your token on autopilot.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz holder booster.png" class="feat-card-img" alt="Holder Booster">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-green">Growth</span>
+          <h3>Holder Booster</h3>
+          <p>Distribute your token across fresh wallets in one guided flow. Improve your holder count presentation and make your project look healthier at a glance.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz fomo.png" class="feat-card-img" alt="FOMO Booster">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-gold">Momentum</span>
+          <h3>FOMO Booster</h3>
+          <p>Repeated micro buy/sell bundles across multiple wallets create chart activity that looks alive and interesting &mdash; perfect for bonding-curve stage tokens.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz magic sell.png" class="feat-card-img" alt="Magic Sell">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-gold">Trading</span>
+          <h3>Magic Sell</h3>
+          <p>Smart sell system that waits for strength. Sets a target market cap, watches for meaningful buys, rotates sell wallets for cleaner exits. Whitelists respected.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz bundle.png" class="feat-card-img" alt="Bundle">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-gold">Advanced</span>
+          <h3>Bundle System</h3>
+          <p>Regular or Stealth (Magic) mode. Spread capital across multiple wallets. Full stop-loss, take-profit, trailing stop, and buy-dip management available after entry.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz launchbuy.png" class="feat-card-img" alt="Launch + Buy">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-green">Launch</span>
+          <h3>Launch + Buy</h3>
+          <p>Launch a new Pump-style token and instantly buy across multiple wallets. Normal or stealth mode. Built for teams who want full control from day one.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz sniper.png" class="feat-card-img" alt="Sniper Wizard">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-gold">Snipe</span>
+          <h3>Sniper Wizard</h3>
+          <p>Watch a wallet. The moment it launches a token, the wizard fires. Multi-wallet support, normal and stealth modes, configurable balance. Only 0.5% on successful snipes.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz trading.png" class="feat-card-img" alt="Trading Desk">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-gold">Trading</span>
+          <h3>Buy / Sell Desk</h3>
+          <p>Central trading hub inside Telegram &mdash; wallet tools, bundle tools, and fast actions, all in one place. Lower fees than most Telegram bots on the market.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz sniper.png" class="feat-card-img" alt="Vanity Wallet">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-green">Utility</span>
+          <h3>Vanity Wallet</h3>
+          <p>Create clean custom wallets with short start or end patterns directly through the bot. Quick, simple, and designed for people who want branded wallet identity without the headache.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz image wizard.png" class="feat-card-img" alt="Image Wizard">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-green">Utility</span>
+          <h3>Image Resizer</h3>
+          <p>Resize logos to 1:1 and banners to 1:3 in seconds. Clean, non-stretched results. Great for token branding, social posts, and launch prep.</p>
+        </div>
+      </div>
+
+      <div class="feat-card reveal">
+        <img src="trendingtoolz community.png" class="feat-card-img" alt="Wallet + Vision">
+        <div class="feat-card-body">
+          <span class="feat-badge badge-green">Intel</span>
+          <h3>Wallet Tracker & Vision</h3>
+          <p>Track wallets for buys, sells, and launches. Vision watches X/Twitter accounts and alerts you when community names change &mdash; catch early social signals before anyone else.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DEEP: VOLUME
+     ============================================================ -->
+<div class="divider"></div>
+<section class="deep-section">
+  <div class="container">
+    <div class="deep-inner reveal">
+      <div class="deep-img-wrap">
+        <img src="trendingtoolz volume image.png" alt="Volume Booster">
+      </div>
+      <div class="deep-content">
+        <span class="tag">Volume</span>
+        <h2>Organic vs Bundled Volume</h2>
+        <p>Volume is one of the biggest signals on-chain. The Wizard Toolz volume system gives you two distinct paths depending on what your token needs right now.</p>
+        <p><strong style="color:var(--white);">Organic Volume</strong> generates natural-looking trading activity spread across time &mdash; great for steady momentum without obvious patterns.</p>
+        <p><strong style="color:var(--white);">Bundled Volume</strong> is faster and more aggressive &mdash; ideal when you need to make a big move quickly and create real chart energy.</p>
+        <div class="deep-pills">
+          <span class="pill pill-green">Free Trial Available</span>
+          <span class="pill">No coding needed</span>
+          <span class="pill">Configure via Telegram</span>
+          <span class="pill pill-gold">Powerful automation</span>
+        </div>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Try Volume Booster →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DEEP: BUNDLE + LAUNCH
+     ============================================================ -->
+<div class="divider"></div>
+<section class="deep-section">
+  <div class="container">
+    <div class="deep-inner reverse reveal">
+      <div class="deep-img-wrap">
+        <img src="trendingtoolz launchbuy.png" alt="Launch and Buy">
+      </div>
+      <div class="deep-content">
+        <span class="tag">Launch Tools</span>
+        <h2>Bundle System &amp; Launch + Buy</h2>
+        <p>The bundle system spreads your capital across multiple wallets in one smooth flow. You choose Regular (straightforward) or Magic Bundle (stealth mode with extra privacy routing).</p>
+        <p>After entry, you can set stop-loss, take-profit, trailing stops, and buy-dip orders &mdash; all managed right inside Telegram.</p>
+        <p><strong style="color:var(--white);">Launch + Buy</strong> takes it further &mdash; launch a brand new Pump-style token and immediately buy in across multiple wallets, all in one coordinated action. Launch wallets and sniper wallets can feed directly into the trading flow after entry.</p>
+        <div class="deep-pills">
+          <span class="pill">Regular &amp; Stealth modes</span>
+          <span class="pill pill-gold">Stop Loss / Take Profit</span>
+          <span class="pill">Multi-wallet support</span>
+          <span class="pill">Trailing stop orders</span>
+        </div>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Explore Bundles →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DEEP: SNIPER
+     ============================================================ -->
+<div class="divider"></div>
+<section class="deep-section">
+  <div class="container">
+    <div class="deep-inner reveal">
+      <div class="deep-img-wrap">
+        <img src="trendingtoolz sniper.png" alt="Sniper Wizard">
+      </div>
+      <div class="deep-content">
+        <span class="tag">Snipe</span>
+        <h2>Sniper Wizard</h2>
+        <p>Point the Sniper Wizard at any wallet. The moment that wallet launches a token on-chain, you're in &mdash; automatically, instantly, across as many wallets as you want.</p>
+        <p>Choose how much SOL to deploy per snipe, and whether to use standard or stealth routing. No manual watching. No missed launches.</p>
+        <div class="deep-pills">
+          <span class="pill pill-gold">0.5% handling fee</span>
+          <span class="pill">Multi-wallet entry</span>
+          <span class="pill">Stealth mode available</span>
+          <span class="pill">Configurable balance</span>
+        </div>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Activate Sniper →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DEEP: BURN AGENT
+     ============================================================ -->
+<div class="divider"></div>
+<section class="deep-section">
+  <div class="container">
+    <div class="deep-inner reverse reveal">
+      <div class="deep-img-wrap">
+        <img src="trendingtoolz burn agent image.png" alt="Burn Agent">
+      </div>
+      <div class="deep-content">
+        <span class="tag">Automation</span>
+        <h2>Burn Agent</h2>
+        <p>For token teams that want automated support built into the project's flow. The Burn Agent watches your creator reward stream and handles the rest &mdash; claiming rewards, buying back tokens from the market, and burning them.</p>
+        <p>You choose how rewards are handled and how aggressively the agent operates. Set it up once in Telegram, and let the wizard do the work.</p>
+        <div class="deep-pills">
+          <span class="pill pill-gold">Automated buybacks</span>
+          <span class="pill">Auto-burn mechanism</span>
+          <span class="pill">Configurable rules</span>
+          <span class="pill">Team-focused</span>
+        </div>
+        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Contact Support for Setup →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     TOOLS: EXTRA FEATURES
+     ============================================================ -->
+<div class="divider"></div>
+<section id="tools">
+  <div class="container">
+    <div class="tools-header reveal">
+      <span class="tag">More Tools</span>
+      <h2 class="section-title">Every Edge.<br>One Bot.</h2>
+      <p class="section-sub">Beyond the headline features, Wizard Toolz packs in social tools, growth services, and intel tools that most platforms don't offer.</p>
+    </div>
+    <div class="tools-grid">
+
+      <div class="card reveal">
+        <div class="card-icon">👁️</div>
+        <h3>Wallet Tracker</h3>
+        <p>Follow any wallet's on-chain activity in real time. Get notified of buys, sells, and new token launches. Perfect for tracking dev wallets or smart money you want to shadow.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">🔭</div>
+        <h3>Vision</h3>
+        <p>Watch selected X/Twitter accounts for community name changes. When a project rebrands or shifts, you'll know before most people. Early signal, competitive edge.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">👥</div>
+        <h3>X Followers</h3>
+        <p>Grow your X presence with follower packages. Choose your package, coordinate timing with support, and watch your numbers climb. Support confirmation is required before delivery.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">❤️</div>
+        <h3>Engagement Services</h3>
+        <p>Views, likes, reposts, clicks, and more &mdash; across X, Facebook, Reddit, Telegram, Discord, and TikTok. Contact support to discuss what you need and get a quote.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">🎤</div>
+        <h3>Spaces Booster</h3>
+        <p>X/Twitter Spaces listener packages &mdash; 500 listeners for 30 min or 120 min sessions. Confirm slot availability with support before payment. Proof of space beats empty rooms every time.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">🎨</div>
+        <h3>Vanity Wallet</h3>
+        <p>Create custom vanity wallets with short clean prefixes or suffixes through the bot. Great for branding, team wallets, and launch presentation.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">✨</div>
+        <h3>Custom Tools</h3>
+        <p>Need something not listed here? Message support. The Wizard Toolz team builds custom Telegram tools for projects with specific needs. Tell us what you're trying to do.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SUBSCRIPTIONS
+     ============================================================ -->
+<section id="subscriptions">
+  <div class="container">
+    <div class="subs-header reveal">
+      <span class="tag">Marketplace</span>
+      <h2 class="section-title">Subscriptions &amp; Accounts</h2>
+      <p class="section-sub" style="margin:12px auto 0;text-align:center;">
+        Need access to premium platforms without the full price? We offer subscriptions and accounts across a wide range of services. Message support for pricing and availability.
+      </p>
+    </div>
+    <div class="subs-pills reveal">
+      <span class="sub-pill">ChatGPT</span>
+      <span class="sub-pill">Claude</span>
+      <span class="sub-pill">Perplexity</span>
+      <span class="sub-pill">ElevenLabs</span>
+      <span class="sub-pill">DeepL</span>
+      <span class="sub-pill">Canva</span>
+      <span class="sub-pill">Adobe</span>
+      <span class="sub-pill">Adobe Express</span>
+      <span class="sub-pill">Instagram</span>
+      <span class="sub-pill">TikTok</span>
+      <span class="sub-pill">X / Twitter</span>
+      <span class="sub-pill">Telegram</span>
+      <span class="sub-pill">Picsart</span>
+      <span class="sub-pill">Netflix</span>
+      <span class="sub-pill">Spotify</span>
+      <span class="sub-pill">Apple TV+</span>
+      <span class="sub-pill">Paramount+</span>
+      <span class="sub-pill">IPTV</span>
+      <span class="sub-pill">Deezer</span>
+      <span class="sub-pill">VBTV</span>
+      <span class="sub-pill">Megogo</span>
+    </div>
+    <div style="text-align:center;">
+      <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Message Support for Pricing →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PRICING / FEES
+     ============================================================ -->
+<section id="pricing">
+  <div class="container">
+    <div class="pricing-header reveal">
+      <span class="tag">Fees</span>
+      <h2 class="section-title">Half the Fee.<br>Same Power.</h2>
+      <p class="section-sub" style="margin:12px auto 0;text-align:center;">
+        Most major Telegram trading bots charge around 1% per handled trade. We charge 0.5%. That's real money saved on every transaction.
+      </p>
+    </div>
+    <div class="fee-compare reveal">
+      <div class="fee-card">
+        <div class="fee-name">Typical Competitors</div>
+        <div class="fee-num">1%</div>
+        <div class="fee-label">handling fee per trade</div>
+      </div>
+      <div class="fee-card featured">
+        <div class="fee-badge-top">✦ Our Rate</div>
+        <div class="fee-name">Wizard Toolz</div>
+        <div class="fee-num">0.5%</div>
+        <div class="fee-label">handling fee per trade</div>
+      </div>
+    </div>
+    <div style="text-align:center;max-width:560px;margin:0 auto;" class="reveal">
+      <p style="font-size:15px;color:var(--muted);line-height:1.7;">
+        Our 0.5% handling fee applies to trading routes we process &mdash; including sniper entries, bundle trades, and other handled actions. Some stealth features include a small extra routing cost. Volume trials are available for free. Everything else is explained clearly inside the bot.
+      </p>
+      <div style="margin-top:28px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Start for Free →</a>
+        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Ask Support</a>
+        <a class="btn btn-outline" href="tokenomics.html">View Tokenomics</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tokenomics">
+  <div class="container">
+    <div class="pricing-header reveal">
+      <span class="tag">Tokenomics</span>
+      <h2 class="section-title">Where Fees Go.<br>Why Burns Matter.</h2>
+      <p class="section-sub" style="margin:12px auto 0;text-align:center;">
+        Keep handled trading cheaper than the usual Telegram bot model, pass through outside routing only when needed, and route half of every platform fee we take back into on-chart support through the burn-side flow.
+      </p>
+    </div>
+    <div class="tokenomics-grid">
+      <div class="tokenomics-card reveal">
+        <h3>Core Fees</h3>
+        <p>Handled routes are designed to stay simple and competitive while still keeping the platform sustainable.</p>
+        <ul class="tokenomics-lines">
+          <li><span>Handled trade fee</span><span>0.5%</span></li>
+          <li><span>Regular Bundle setup</span><span>Free</span></li>
+          <li><span>Magic Bundle setup</span><span>0.05 SOL + routing</span></li>
+          <li><span>Sniper Wizard magic mode</span><span>0.10 SOL + routing</span></li>
+          <li><span>Launch + Buy normal</span><span>0.35 SOL</span></li>
+          <li><span>Launch + Buy magic</span><span>0.50 SOL + routing</span></li>
+        </ul>
+      </div>
+      <div class="tokenomics-card reveal">
+        <h3>Revenue Split</h3>
+        <p>Net platform fees are split evenly so one side strengthens operations and the other side keeps feeding the burn side of the ecosystem.</p>
+        <ul class="tokenomics-lines">
+          <li><span>Treasury</span><span>50%</span></li>
+          <li><span>Back into charts</span><span>50%</span></li>
+          <li><span>Treasury use</span><span>Infra, support, growth</span></li>
+          <li><span>Chart support use</span><span>Burn wallet / buyback flow</span></li>
+        </ul>
+      </div>
+      <div class="tokenomics-card reveal">
+        <h3>User Clarity</h3>
+        <p>Third-party costs are not hidden inside the platform fee. If stealth routing or an outside provider is required, that cost is shown separately.</p>
+        <ul class="tokenomics-lines">
+          <li><span>Stealth routing</span><span>Pass-through cost</span></li>
+          <li><span>Social services</span><span>Quoted by support</span></li>
+          <li><span>Subscriptions / accounts</span><span>Quoted by support</span></li>
+          <li><span>Volume trial</span><span>Free</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="tokenomics-banner reveal">
+      <div>
+        <h3>Live Burn Tracker</h3>
+        <p>The floating burn widget reads the live token supply from chain and compares it against an original 1 billion supply. That gives visitors a clean estimate of how much supply has been removed and how much is still left.</p>
+      </div>
+      <a class="btn btn-primary" href="tokenomics.html">Open Full Tokenomics Page &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     ROADMAP
+     ============================================================ -->
+<section id="roadmap">
+  <div class="container">
+    <div class="roadmap-header reveal">
+      <span class="tag">Roadmap</span>
+      <h2 class="section-title">Built to Last.<br>Growing Fast.</h2>
+      <p class="section-sub" style="margin:12px auto 0;text-align:center;">
+        Wizard Toolz is growing fast. More integrations, more infrastructure, and much bigger expansion are already in motion.
+      </p>
+    </div>
+    <div class="roadmap-grid">
+      <div class="rm-card phase1 reveal">
+        <div class="rm-phase">Phase 1</div>
+        <h3>Live Core Platform</h3>
+        <ul class="rm-list">
+          <li>Reaction Booster</li>
+          <li>Volume Booster (Organic + Bundle)</li>
+          <li>Burn Agent</li>
+          <li>Holder Booster</li>
+          <li>Wallet Tracker</li>
+          <li>Vision (X name alerts)</li>
+          <li>Image Resizer</li>
+          <li>X Followers</li>
+          <li>Engagement Services</li>
+          <li>Subscriptions Marketplace</li>
+        </ul>
+        <span class="rm-status">✓ Live Now</span>
+      </div>
+      <div class="rm-card phase2 reveal">
+        <div class="rm-phase">Phase 2</div>
+        <h3>Advanced Trading &amp; Launch Tools</h3>
+        <ul class="rm-list">
+          <li>Bundle System (Regular + Magic)</li>
+          <li>Magic Sell</li>
+          <li>FOMO Booster</li>
+          <li>Sniper Wizard</li>
+          <li>Launch + Buy</li>
+          <li>Buy / Sell Desk</li>
+          <li>Deeper trading automation</li>
+          <li>Stealth routing enhancements</li>
+          <li>Major platform-wide implementation update</li>
+        </ul>
+        <span class="rm-status">⚡ In Progress</span>
+      </div>
+      <div class="rm-card phase3 reveal">
+        <div class="rm-phase">Phase 3</div>
+        <h3>Platform Expansion</h3>
+        <ul class="rm-list">
+          <li>Full website ecosystem</li>
+          <li>Richer analytics dashboards</li>
+          <li>Expanded account marketplace</li>
+          <li>Improved community alerting</li>
+          <li>More launch &amp; trading utilities</li>
+          <li>Premium enterprise tools</li>
+          <li>Custom tool builds for projects</li>
+          <li>Exchange expansion plans</li>
+          <li>Launchpad rollout</li>
+          <li>Cold-wallet partnership integration</li>
+        </ul>
+        <span class="rm-status">🔮 Coming Soon</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+<section class="deep-section" id="launchpad">
+  <div class="container">
+    <div class="deep-inner reveal">
+      <div class="deep-img-wrap">
+        <img src="trendingtoolz launchbuy.png" alt="Wizard Toolz launchpad teaser">
+      </div>
+      <div class="deep-content">
+        <span class="tag">Launchpad Teaser</span>
+        <h2>What’s Coming Next</h2>
+        <p>We are building toward a much bigger launch surface than the usual static meme-token page. Think live launches, creator context, trader context, richer discovery, stronger trust surfaces, and post-migration trading that stays inside the same product.</p>
+        <p>The goal is simple: a launchpad that feels alive during launch, stronger after migration, and far more useful than a page that dies the second the token goes live.</p>
+        <div class="deep-pills">
+          <span class="pill">Integrated live rooms</span>
+          <span class="pill">Community on token pages</span>
+          <span class="pill">Trenches-style discovery</span>
+          <span class="pill">Creator and trader context</span>
+          <span class="pill">Same-page post-grad trading</span>
+          <span class="pill pill-gold">Cold-wallet partnership in progress</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     COMMUNITY LINKS
+     ============================================================ -->
+<div class="divider"></div>
+<section id="community">
+  <div class="container">
+    <div class="reveal">
+      <span class="tag">Community</span>
+      <h2 class="section-title">Join the Coven</h2>
+      <p class="section-sub" style="margin:12px auto 0;text-align:center;">
+        Connect with other users, get alerts when new tools drop, and reach the team directly.
+      </p>
+    </div>
+    <div class="community-cards">
+      <div class="comm-card reveal">
+        <div class="comm-icon">🤖</div>
+        <h3>Telegram Bot</h3>
+        <p>Access every tool, configure trades, and run automations &mdash; all from one bot.</p>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank" style="width:100%;justify-content:center;">Open Bot</a>
+      </div>
+      <div class="comm-card reveal">
+        <div class="comm-icon">💬</div>
+        <h3>Community Group</h3>
+        <p>Join the main group to connect with other users, share ideas, and get support.</p>
+        <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank" style="width:100%;justify-content:center;">Join Community</a>
+      </div>
+      <div class="comm-card reveal">
+        <div class="comm-icon">𝕏</div>
+        <h3>Official X</h3>
+        <p>Follow the official X account for updates, launchpad teasers, announcements, and major feature drops.</p>
+        <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank" style="width:100%;justify-content:center;">Follow @wizardtoolz</a>
+      </div>
+      <div class="comm-card reveal">
+        <div class="comm-icon">🔔</div>
+        <h3>Alerts Channel</h3>
+        <p>Get notified of new tools, updates, and important announcements as they happen.</p>
+        <a class="btn btn-outline" href="https://t.me/wizardtoolz_alerts" target="_blank" style="width:100%;justify-content:center;">Join Alerts</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FAQ
+     ============================================================ -->
+<section id="faq">
+  <div class="container">
+    <div class="faq-header reveal">
+      <span class="tag">FAQ</span>
+      <h2 class="section-title">Questions?<br>Answered.</h2>
+    </div>
+    <div class="faq-grid">
+      <div class="faq-item reveal">
+        <button class="faq-q">How do I get started? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Open the Telegram bot using the link above. The bot will walk you through everything step by step. Most tools are active within minutes of setup.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">Do I need to be technical? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Not at all. Everything is designed to be used by anyone who's comfortable with Telegram. You follow prompts, choose options, and the bot handles the automation underneath. No coding, no wallet configuration headaches.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">Is everything controlled from Telegram? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Yes. The entire platform lives inside Telegram. You configure tools, fund wallets (when required), and manage everything through bot commands and menus &mdash; no external dashboards needed.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">Are there free trials? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Yes &mdash; a free trial is available for the Volume Booster. It's a great way to see the platform in action before committing to a larger package.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">Do I need to fund wallets myself? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">For trading tools (volume, sniper, bundle, launch), the bot will show you a wallet address to fund with SOL. You send the funds, and the bot handles everything from there. Your funds stay under the control of the process you configured.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">What fees do you charge? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Our handled trading routes use a 0.5% fee. That's typically half of what most competing Telegram trading bots charge. Some stealth-mode features include a small additional routing cost. Half of every platform fee we take goes back into on-chart support through the burn-side flow. Volume trials are free. Specific pricing for growth and social services is available on request through support.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">Why are your fees lower than many competitors? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">We built this platform for serious Solana users, and we believe fees should reflect value &mdash; not just be as high as the market allows. Many leading Telegram bots charge 1% per handled trade. We charge 0.5%. Over many trades, that difference is significant.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">Can I request custom tools? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Yes. If you need something specific that isn't in the current toolkit, reach out to support directly. We build custom Telegram tools for projects and teams with unique needs.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">How do I contact support? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Message the support handle directly, or ask in the community group. For time-sensitive trading issues, support is your fastest route. The community group is great for general questions and connecting with other users.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     CTA FOOTER
+     ============================================================ -->
+<section id="cta">
+  <div class="container" style="position:relative;z-index:1;">
+    <img src="trendingtoolz logo.png" class="cta-wizard" alt="Wizard Toolz">
+    <h2 class="cta-title reveal">The Spells Are Cast.<br>You Just Have to <span>Open the Bot.</span></h2>
+    <p class="cta-sub reveal">Join the ecosystem early, use the tools now, and watch the bigger launchpad vision take shape. Wizard Toolz is building far beyond a standard Telegram bot.</p>
+    <div class="cta-btns reveal">
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank" style="font-size:15px;padding:16px 32px;">✦ Open Telegram Bot</a>
+      <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank" style="font-size:15px;padding:16px 32px;">Join Community</a>
+      <a class="btn btn-outline" href="https://t.me/wizardtoolz_alerts" target="_blank" style="font-size:15px;padding:16px 32px;">🔔 Join Alerts</a>
+      <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank" style="font-size:15px;padding:16px 32px;">Contact Support</a>
+    </div>
+    <div class="cta-links reveal">
+      <span>Token: <span style="font-family:'DM Mono',monospace;font-size:12px;">Launching Soon</span></span>
+      <span>•</span>
+      <a href="https://t.me/wizard_toolz">t.me/wizard_toolz</a>
+      <span>•</span>
+      <a href="https://x.com/wizardtoolz">x.com/wizardtoolz</a>
+      <span>•</span>
+      <a href="https://t.me/wizardtoolz_alerts">t.me/wizardtoolz_alerts</a>
+      <span>•</span>
+      <a href="https://t.me/wizard_toolz">DM for Custom Tools</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container footer-inner">
+    <div class="footer-logo">
+      <img src="trendingtoolz logo.png" alt="Wizard Toolz">
+      Wizard Toolz
+    </div>
+    <div class="footer-links">
+      <a href="https://t.me/wizard_toolz">Telegram</a>
+      <a href="https://x.com/wizardtoolz">X</a>
+      <a href="https://t.me/wizardtoolz_alerts">Alerts</a>
+      <a href="https://t.me/wizardtoolzbot">Bot</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+      <a href="security.html">Security</a>
+      <a href="https://t.me/wizard_toolz">Contact</a>
+    </div>
+    <div class="footer-copy">© 2026 WIZARD TOOLZ</div>
+  </div>
+</footer>
+
+<aside class="burn-widget" aria-live="polite">
+  <div class="burn-widget-top">
+    <div class="burn-widget-title">Burn Meter</div>
+    <div class="burn-widget-chip">Live</div>
+  </div>
+  <div class="burn-widget-body">
+    <div class="burn-widget-grid">
+      <div class="burn-stat">
+        <span class="burn-stat-label">Total Burned</span>
+        <span class="burn-stat-value" id="burnedTotal">--</span>
+      </div>
+      <div class="burn-stat">
+        <span class="burn-stat-label">Supply Left</span>
+        <span class="burn-stat-value" id="supplyLeft">--</span>
+      </div>
+    </div>
+    <div class="burn-widget-progress"><span id="burnProgress"></span></div>
+    <div class="burn-widget-meta">
+      <span>Progress from original 1,000,000,000 supply: <strong id="burnPercent" style="color:var(--white);">--</strong></span>
+      <span>Token Mint: <code id="burnMint">[INSERT TOKEN MINT]</code></span>
+      <span>Last updated: <strong id="burnUpdated" style="color:var(--white);">Waiting for config</strong></span>
+    </div>
+    <div class="burn-widget-actions">
+      <a class="btn btn-outline" href="tokenomics.html">Tokenomics</a>
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot</a>
+    </div>
+    <p class="burn-widget-note">The widget compares live on-chain supply against an original 1B supply. Add the real mint address to activate it.</p>
+  </div>
+</aside>
+
+<aside class="chat-widget">
+  <button class="chat-toggle" id="chatToggle" type="button">
+    <span class="chat-icon" aria-hidden="true">
+      <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img">
+        <circle cx="120" cy="120" r="120" fill="#229ED9"/>
+        <path fill="#fff" d="M54.6 118.7c34.8-15.2 58-25.2 69.7-30.1 33.4-13.9 40.4-16.3 44.9-16.4 1 0 3.3.2 4.8 1.4 1.2 1 1.6 2.3 1.8 3.2.2.9.4 3.1.2 4.8-1.8 18.8-9.5 64.4-13.4 85.4-1.7 8.9-5 11.9-8.2 12.2-7  .6-12.4-4.6-19.2-9.1-10.7-7-16.7-11.4-27-18.2-11.9-7.8-4.2-12.1 2.6-19.2 1.8-1.8 32.4-29.7 33-32.2.1-.3.1-1.5-.6-2.1s-1.8-.4-2.5-.2c-1 .2-16.2 10.3-45.7 30.2-4.3 3-8.2 4.4-11.9 4.3-4-.1-11.6-2.3-17.3-4.1-7-2.3-12.6-3.5-12.1-7.4.3-2 3-4.1 8.1-6.1z"/>
+      </svg>
+    </span>
+    <span>Need help? Chat on Telegram</span>
+  </button>
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-panel-top">
+      <div class="chat-panel-title">
+        <span class="chat-icon" aria-hidden="true">
+          <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img">
+            <circle cx="120" cy="120" r="120" fill="#229ED9"/>
+            <path fill="#fff" d="M54.6 118.7c34.8-15.2 58-25.2 69.7-30.1 33.4-13.9 40.4-16.3 44.9-16.4 1 0 3.3.2 4.8 1.4 1.2 1 1.6 2.3 1.8 3.2.2.9.4 3.1.2 4.8-1.8 18.8-9.5 64.4-13.4 85.4-1.7 8.9-5 11.9-8.2 12.2-7 .6-12.4-4.6-19.2-9.1-10.7-7-16.7-11.4-27-18.2-11.9-7.8-4.2-12.1 2.6-19.2 1.8-1.8 32.4-29.7 33-32.2.1-.3.1-1.5-.6-2.1s-1.8-.4-2.5-.2c-1 .2-16.2 10.3-45.7 30.2-4.3 3-8.2 4.4-11.9 4.3-4-.1-11.6-2.3-17.3-4.1-7-2.3-12.6-3.5-12.1-7.4.3-2 3-4.1 8.1-6.1z"/>
+          </svg>
+        </span>
+        <span>Wizard Toolz Support</span>
+      </div>
+      <button class="chat-close" id="chatClose" type="button" aria-label="Close support chat">&times;</button>
+    </div>
+    <div class="chat-panel-body">
+      <p>Questions, custom tools, pricing, or setup help &mdash; message us directly on Telegram and we&apos;ll point you the right way.</p>
+      <div class="chat-panel-actions">
+        <a class="btn btn-primary" href="https://t.me/wizard_toolz" target="_blank">Message @wizard_toolz</a>
+        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Open Community Group</a>
+        <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Open X</a>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ============================================================
+     JS
+     ============================================================ -->
+<script>
+const WIZARD_TOKENOMICS = {
+  mintAddress: '[INSERT TOKEN MINT]',
+  initialSupply: 1_000_000_000,
+  rpcEndpoints: [
+    'https://api.mainnet-beta.solana.com'
+  ]
+};
+
+function formatTokenAmount(value) {
+  if (!Number.isFinite(value)) return '--';
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: value >= 1 ? 0 : 4
+  }).format(value);
+}
+
+function isConfiguredMint(value) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value || '');
+}
+
+function setBurnWidgetState({ burned, left, percent, updated, mint, error }) {
+  const burnedNode = document.getElementById('burnedTotal');
+  const leftNode = document.getElementById('supplyLeft');
+  const percentNode = document.getElementById('burnPercent');
+  const updatedNode = document.getElementById('burnUpdated');
+  const mintNode = document.getElementById('burnMint');
+  const progressNode = document.getElementById('burnProgress');
+
+  if (!burnedNode || !leftNode || !percentNode || !updatedNode || !mintNode || !progressNode) return;
+
+  burnedNode.textContent = error ? '--' : formatTokenAmount(burned);
+  leftNode.textContent = error ? '--' : formatTokenAmount(left);
+  percentNode.textContent = error ? '--' : `${percent.toFixed(2)}%`;
+  updatedNode.textContent = error || !updated ? (error || 'Waiting for config') : updated;
+  mintNode.textContent = mint || '[INSERT TOKEN MINT]';
+  progressNode.style.width = error ? '0%' : `${Math.max(0, Math.min(percent, 100))}%`;
+}
+
+async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getTokenSupply',
+      params: [mintAddress]
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`RPC ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const supply = Number(payload?.result?.value?.uiAmountString ?? payload?.result?.value?.uiAmount);
+
+  if (!Number.isFinite(supply)) {
+    throw new Error('Supply unavailable');
+  }
+
+  return supply;
+}
+
+async function refreshBurnWidget() {
+  const mintAddress = WIZARD_TOKENOMICS.mintAddress;
+  if (!isConfiguredMint(mintAddress)) {
+    setBurnWidgetState({ error: 'Add your real token mint', mint: mintAddress });
+    return;
+  }
+
+  for (const endpoint of WIZARD_TOKENOMICS.rpcEndpoints) {
+    try {
+      const currentSupply = await fetchTokenSupplyFromRpc(endpoint, mintAddress);
+      const left = Math.max(0, currentSupply);
+      const burned = Math.max(0, WIZARD_TOKENOMICS.initialSupply - left);
+      const percent = WIZARD_TOKENOMICS.initialSupply > 0
+        ? (burned / WIZARD_TOKENOMICS.initialSupply) * 100
+        : 0;
+
+      setBurnWidgetState({
+        burned,
+        left,
+        percent,
+        updated: new Date().toLocaleString(),
+        mint: mintAddress
+      });
+      return;
+    } catch (error) {
+      continue;
+    }
+  }
+
+  setBurnWidgetState({
+    error: 'Supply temporarily unavailable',
+    mint: mintAddress
+  });
+}
+
+// Scroll reveal
+const reveals = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      observer.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+reveals.forEach(r => observer.observe(r));
+
+// Stagger grid children
+document.querySelectorAll('.features-grid, .tools-grid, .roadmap-grid, .community-cards').forEach(grid => {
+  grid.querySelectorAll('.reveal').forEach((child, i) => {
+    child.style.transitionDelay = (i * 0.07) + 's';
+  });
+});
+
+// FAQ accordion
+document.querySelectorAll('.faq-q').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const item = btn.parentElement;
+    const isOpen = item.classList.contains('open');
+    document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+    if (!isOpen) item.classList.add('open');
+  });
+});
+
+// Duplicate trust track for seamless marquee
+const track = document.getElementById('trustTrack');
+if (track) {
+  track.innerHTML += track.innerHTML;
+}
+
+const chatToggle = document.getElementById('chatToggle');
+const chatPanel = document.getElementById('chatPanel');
+const chatClose = document.getElementById('chatClose');
+if (chatToggle && chatPanel) {
+  chatToggle.addEventListener('click', () => {
+    chatPanel.classList.toggle('open');
+  });
+}
+if (chatClose && chatPanel) {
+  chatClose.addEventListener('click', () => {
+    chatPanel.classList.remove('open');
+  });
+}
+
+refreshBurnWidget();
+setInterval(refreshBurnWidget, 60000);
+</script>
+</body>
+</html>

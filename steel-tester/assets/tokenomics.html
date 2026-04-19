@@ -1,0 +1,612 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>WIZARD TOOLZ | Tokenomics</title>
+<meta name="theme-color" content="#050507">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="apple-touch-icon" href="favicon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#050507;
+  --bg2:#0c0c10;
+  --bg3:#111116;
+  --border:rgba(255,255,255,0.08);
+  --text:#ececf0;
+  --muted:#8b8b96;
+  --white:#fff;
+  --gold:#c8a84b;
+  --gold-dim:#8c7233;
+  --green:#3ddc84;
+  --radius:18px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:radial-gradient(circle at top, rgba(200,168,75,0.08), transparent 35%), var(--bg);
+  color:var(--text);
+  font-family:'DM Sans',sans-serif;
+  line-height:1.6;
+}
+a{text-decoration:none;color:inherit}
+.container{width:100%;max-width:1120px;margin:0 auto;padding:0 24px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  border-radius:999px;padding:13px 24px;font-size:14px;font-weight:600;
+  transition:.2s ease;
+}
+.btn-primary{background:var(--gold);color:#000}
+.btn-outline{border:1px solid var(--border);background:rgba(255,255,255,0.03)}
+.btn:hover{transform:translateY(-1px)}
+.tag{
+  display:inline-block;
+  padding:5px 12px;
+  border-radius:999px;
+  border:1px solid rgba(200,168,75,0.25);
+  color:var(--gold);
+  font-family:'DM Mono',monospace;
+  font-size:11px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+nav{
+  position:sticky;top:0;z-index:50;
+  background:rgba(5,5,7,0.88);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+}
+.nav-inner{
+  min-height:72px;
+  display:flex;align-items:center;justify-content:space-between;gap:20px;
+}
+.nav-logo{
+  display:flex;align-items:center;gap:12px;
+  font-family:'Cinzel',serif;font-size:20px;font-weight:700;
+}
+.nav-logo img{width:40px;height:40px;border-radius:10px;object-fit:contain}
+.nav-actions{display:flex;gap:12px;flex-wrap:wrap}
+.hero{padding:88px 0 48px}
+.hero-grid{
+  display:grid;
+  grid-template-columns:1.05fr .95fr;
+  gap:28px;
+  align-items:center;
+}
+.hero h1{
+  font-family:'Cinzel',serif;
+  font-size:clamp(36px,6vw,68px);
+  line-height:1.08;
+  margin:18px 0 16px;
+}
+.hero p{
+  color:var(--muted);
+  font-size:18px;
+  max-width:700px;
+}
+.hero-card,.panel,.metric,.info-card{
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:24px;
+}
+.hero-card{padding:24px}
+.hero-card img{
+  width:100%;
+  border-radius:18px;
+  aspect-ratio:1/1;
+  object-fit:cover;
+}
+.section{padding:24px 0 72px}
+.section h2{
+  font-family:'Cinzel',serif;
+  font-size:clamp(28px,4vw,46px);
+  line-height:1.15;
+  margin:16px 0 10px;
+}
+.section-sub{color:var(--muted);max-width:760px}
+.metrics{
+  margin-top:34px;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:16px;
+}
+.metric{padding:18px}
+.metric-label{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  margin-bottom:8px;
+}
+.metric-value{
+  display:block;
+  color:var(--white);
+  font-size:28px;
+  font-weight:700;
+}
+.progress{
+  margin-top:18px;
+  height:12px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.06);
+  overflow:hidden;
+}
+.progress span{
+  display:block;height:100%;width:0%;
+  background:linear-gradient(90deg,var(--gold),#f6d97f);
+  transition:width .35s ease;
+}
+.meta{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  margin-top:18px;
+}
+.panel{padding:28px}
+.panel-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:18px;
+  margin-top:34px;
+}
+.info-card{padding:24px}
+.info-card h3{
+  font-family:'Cinzel',serif;
+  font-size:20px;
+  margin-bottom:10px;
+}
+.info-card p{color:var(--muted);font-size:15px}
+.lines{list-style:none;margin-top:18px;display:flex;flex-direction:column;gap:10px}
+.lines li{
+  display:flex;justify-content:space-between;gap:14px;
+  padding-top:10px;border-top:1px solid var(--border);
+  font-size:14px;
+}
+.lines span:last-child{
+  color:var(--gold);
+  font-family:'DM Mono',monospace;
+  font-size:12px;
+  text-align:right;
+}
+.faq{
+  margin-top:24px;
+  display:grid;
+  gap:14px;
+}
+.faq-item{padding:20px}
+.faq-item h4{
+  font-family:'Cinzel',serif;
+  font-size:18px;
+  margin-bottom:8px;
+}
+.faq-item p{color:var(--muted)}
+.footer{
+  padding:26px 0 60px;
+  color:var(--muted);
+  font-size:14px;
+}
+.chat-widget{
+  position:fixed;
+  left:18px;
+  bottom:18px;
+  width:min(320px, calc(100vw - 36px));
+  z-index:60;
+}
+.chat-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  padding:14px 18px;
+  border-radius:999px;
+  background:linear-gradient(180deg,#2497f3,#1f7ed1);
+  color:#fff;
+  box-shadow:0 18px 60px rgba(20,94,163,0.35);
+  font-weight:700;
+  font-size:14px;
+}
+.chat-icon{
+  width:24px;
+  height:24px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  background:rgba(255,255,255,0.18);
+  color:#fff;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.04em;
+  flex-shrink:0;
+}
+.chat-icon svg{
+  width:24px;
+  height:24px;
+  display:block;
+  flex-shrink:0;
+}
+.chat-panel{
+  margin-top:12px;
+  background:rgba(12,12,16,0.96);
+  border:1px solid rgba(36,151,243,0.25);
+  border-radius:20px;
+  box-shadow:0 20px 70px rgba(0,0,0,0.45);
+  overflow:hidden;
+  display:none;
+}
+.chat-panel.open{display:block}
+.chat-panel-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 16px 10px;
+  border-bottom:1px solid var(--border);
+}
+.chat-panel-title{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-family:'Cinzel',serif;
+  color:var(--white);
+  font-size:15px;
+}
+.chat-panel-body{padding:16px}
+.chat-panel-body p{
+  color:var(--muted);
+  font-size:13px;
+}
+.chat-panel-actions{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top:14px;
+}
+.chat-close{
+  color:var(--muted);
+  font-size:18px;
+  line-height:1;
+}
+.footer code{
+  font-family:'DM Mono',monospace;
+  color:var(--text);
+  font-size:12px;
+  word-break:break-all;
+}
+@media(max-width:920px){
+  .hero-grid,.panel-grid,.metrics,.meta{grid-template-columns:1fr}
+  .chat-widget{
+    left:12px;
+    right:12px;
+    bottom:12px;
+    width:auto;
+  }
+  body{padding-bottom:160px;}
+}
+</style>
+</head>
+<body>
+<nav>
+  <div class="container nav-inner">
+    <a class="nav-logo" href="index.html">
+      <img src="trendingtoolz logo.png" alt="Wizard Toolz">
+      <span>Wizard Toolz</span>
+    </a>
+    <div class="nav-actions">
+      <a class="btn btn-outline" href="index.html">Main Site</a>
+      <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Follow X</a>
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <span class="tag">Tokenomics</span>
+      <h1>Simple Fees. Clear Utility. Real Burn Tracking.</h1>
+      <p>Wizard Toolz is built to keep handled trading cheaper than most Telegram competitors while routing half of every platform fee back into on-chart support through the burn-side flow. Clear fees. Clear utility. Clear value.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:28px;">
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Launch the Bot</a>
+        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Ask Support</a>
+        <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Open X</a>
+      </div>
+    </div>
+    <div class="hero-card">
+      <img src="trendingtoolz burn agent image.png" alt="Wizard Toolz burn">
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <span class="tag">Live Burn Widget</span>
+    <h2>Supply Removed From 1B</h2>
+    <p class="section-sub">This page reads the token's live on-chain supply and compares it against an original 1,000,000,000 supply. That gives a simple estimate of how much has been burned and how much remains.</p>
+
+    <div class="metrics">
+      <div class="metric">
+        <span class="metric-label">Total Burned</span>
+        <span class="metric-value" id="burnedTotal">--</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Supply Left</span>
+        <span class="metric-value" id="supplyLeft">--</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Burn Progress</span>
+        <span class="metric-value" id="burnPercent">--</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Last Refresh</span>
+        <span class="metric-value" id="burnUpdated" style="font-size:18px">Waiting for config</span>
+      </div>
+    </div>
+
+    <div class="progress"><span id="burnProgress"></span></div>
+
+    <div class="meta">
+      <div class="panel">
+        <span class="metric-label">Token Mint / CA</span>
+        <div style="font-family:'DM Mono',monospace;font-size:13px;word-break:break-all" id="burnMint">[INSERT TOKEN MINT]</div>
+      </div>
+      <div class="panel">
+        <span class="metric-label">Measurement Method</span>
+        <div style="color:var(--muted)">Current on-chain supply is subtracted from the original 1B supply to estimate total burned.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <span class="tag">Fee Model</span>
+    <h2>How Fees Work</h2>
+    <p class="section-sub">Platform fees stay straightforward. Core handled routes are priced to be competitive, and outside routing or provider costs are shown separately instead of being buried.</p>
+
+    <div class="panel-grid">
+      <div class="info-card">
+        <h3>Core Fees</h3>
+        <p>Handled routes are designed to stay lean and easy to understand.</p>
+        <ul class="lines">
+          <li><span>Handled trade fee</span><span>0.5%</span></li>
+          <li><span>Regular Bundle setup</span><span>Free</span></li>
+          <li><span>Magic Bundle setup</span><span>0.05 SOL + routing</span></li>
+          <li><span>Sniper Wizard magic mode</span><span>0.10 SOL + routing</span></li>
+          <li><span>Launch + Buy normal</span><span>0.35 SOL</span></li>
+          <li><span>Launch + Buy magic</span><span>0.50 SOL + routing</span></li>
+        </ul>
+      </div>
+
+      <div class="info-card">
+        <h3>Where Revenue Goes</h3>
+        <p>Net platform profit is split in half so the platform stays strong while the other half keeps feeding chart support through the burn-side flow.</p>
+        <ul class="lines">
+          <li><span>Treasury</span><span>50%</span></li>
+          <li><span>Back into charts</span><span>50%</span></li>
+          <li><span>Treasury use</span><span>Infra, support, growth</span></li>
+          <li><span>Chart support use</span><span>Burn wallet / buyback flow</span></li>
+        </ul>
+      </div>
+
+      <div class="info-card">
+        <h3>What Is Separate</h3>
+        <p>Some features rely on outside routing or external delivery providers. Those costs are separate from Wizard Toolz profit.</p>
+        <ul class="lines">
+          <li><span>Stealth routing</span><span>Pass-through cost</span></li>
+          <li><span>Social/account services</span><span>Quoted by support</span></li>
+          <li><span>Subscriptions</span><span>Quoted by support</span></li>
+          <li><span>Volume trial</span><span>Free</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <span class="tag">Plain English</span>
+    <h2>Why This Matters</h2>
+    <div class="faq">
+      <div class="info-card faq-item">
+        <h4>Why measure burns from 1B?</h4>
+        <p>Because it gives people a dead-simple benchmark. If the token started at 1,000,000,000 supply, then every token permanently removed reduces that number. The remaining supply tells the story at a glance.</p>
+      </div>
+      <div class="info-card faq-item">
+        <h4>Why keep fees visible?</h4>
+        <p>Because trust matters. If a route costs 0.5%, we say 0.5%. If a stealth provider or outside service adds cost, that should be shown separately instead of hidden in the markup.</p>
+      </div>
+      <div class="info-card faq-item">
+        <h4>Why split revenue between treasury and chart support?</h4>
+        <p>The treasury keeps the platform funded and growing. The other half feeds the burn-side flow so platform revenue keeps creating visible on-chart support instead of disappearing into pure operations.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <span class="tag">What Is Coming</span>
+    <h2>Bigger Platform Moves Ahead</h2>
+    <p class="section-sub">Wizard Toolz is expanding beyond the current Telegram stack. Exchange ambitions, major implementation upgrades, and a much bigger launchpad vision are already in motion.</p>
+
+    <div class="panel-grid">
+      <div class="info-card">
+        <h3>Near-Term Growth</h3>
+        <p>We are pushing toward broader platform expansion, stronger infrastructure, and much bigger public-facing rollout.</p>
+        <ul class="lines">
+          <li><span>Major implementation update</span><span>In progress</span></li>
+          <li><span>Exchange plans</span><span>Planned</span></li>
+          <li><span>More integrations</span><span>Planned</span></li>
+        </ul>
+      </div>
+
+      <div class="info-card">
+        <h3>Launchpad Direction</h3>
+        <p>The launchpad vision is about making launches feel alive, social, and useful before, during, and after migration.</p>
+        <ul class="lines">
+          <li><span>Integrated live rooms</span><span>Planned</span></li>
+          <li><span>Community on token pages</span><span>Planned</span></li>
+          <li><span>Trenches-style discovery</span><span>Planned</span></li>
+        </ul>
+      </div>
+
+      <div class="info-card">
+        <h3>Trust & Trading Context</h3>
+        <p>The goal is a full token surface with creator context, holder context, better discovery, and post-grad trading that never feels like leaving the app.</p>
+        <ul class="lines">
+          <li><span>Creator & trader history</span><span>Planned</span></li>
+          <li><span>Same-page post-grad trading</span><span>Planned</span></li>
+          <li><span>Cold-wallet partnership</span><span>In progress</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;align-items:center;">
+      <div>Wizard Toolz Tokenomics</div>
+      <div>Token: <code>Launching Soon</code></div>
+      <div>Mint / CA: <code>[INSERT TOKEN MINT]</code></div>
+      <div><a href="https://x.com/wizardtoolz" target="_blank">x.com/wizardtoolz</a></div>
+      <div><a href="privacy.html">Privacy</a></div>
+      <div><a href="terms.html">Terms</a></div>
+      <div><a href="security.html">Security</a></div>
+    </div>
+  </div>
+</footer>
+
+<aside class="chat-widget">
+  <button class="chat-toggle" id="chatToggle" type="button">
+    <span class="chat-icon" aria-hidden="true">
+      <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img">
+        <circle cx="120" cy="120" r="120" fill="#229ED9"/>
+        <path fill="#fff" d="M54.6 118.7c34.8-15.2 58-25.2 69.7-30.1 33.4-13.9 40.4-16.3 44.9-16.4 1 0 3.3.2 4.8 1.4 1.2 1 1.6 2.3 1.8 3.2.2.9.4 3.1.2 4.8-1.8 18.8-9.5 64.4-13.4 85.4-1.7 8.9-5 11.9-8.2 12.2-7 .6-12.4-4.6-19.2-9.1-10.7-7-16.7-11.4-27-18.2-11.9-7.8-4.2-12.1 2.6-19.2 1.8-1.8 32.4-29.7 33-32.2.1-.3.1-1.5-.6-2.1s-1.8-.4-2.5-.2c-1 .2-16.2 10.3-45.7 30.2-4.3 3-8.2 4.4-11.9 4.3-4-.1-11.6-2.3-17.3-4.1-7-2.3-12.6-3.5-12.1-7.4.3-2 3-4.1 8.1-6.1z"/>
+      </svg>
+    </span>
+    <span>Need help? Chat on Telegram</span>
+  </button>
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-panel-top">
+      <div class="chat-panel-title">
+        <span class="chat-icon" aria-hidden="true">
+          <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img">
+            <circle cx="120" cy="120" r="120" fill="#229ED9"/>
+            <path fill="#fff" d="M54.6 118.7c34.8-15.2 58-25.2 69.7-30.1 33.4-13.9 40.4-16.3 44.9-16.4 1 0 3.3.2 4.8 1.4 1.2 1 1.6 2.3 1.8 3.2.2.9.4 3.1.2 4.8-1.8 18.8-9.5 64.4-13.4 85.4-1.7 8.9-5 11.9-8.2 12.2-7 .6-12.4-4.6-19.2-9.1-10.7-7-16.7-11.4-27-18.2-11.9-7.8-4.2-12.1 2.6-19.2 1.8-1.8 32.4-29.7 33-32.2.1-.3.1-1.5-.6-2.1s-1.8-.4-2.5-.2c-1 .2-16.2 10.3-45.7 30.2-4.3 3-8.2 4.4-11.9 4.3-4-.1-11.6-2.3-17.3-4.1-7-2.3-12.6-3.5-12.1-7.4.3-2 3-4.1 8.1-6.1z"/>
+          </svg>
+        </span>
+        <span>Wizard Toolz Support</span>
+      </div>
+      <button class="chat-close" id="chatClose" type="button" aria-label="Close support chat">&times;</button>
+    </div>
+    <div class="chat-panel-body">
+      <p>Questions about fees, burns, setup, or custom tools? Message us directly on Telegram.</p>
+      <div class="chat-panel-actions">
+        <a class="btn btn-primary" href="https://t.me/wizard_toolz" target="_blank">Message @wizard_toolz</a>
+        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Open Community Group</a>
+        <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Open X</a>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<script>
+const WIZARD_TOKENOMICS = {
+  mintAddress: '[INSERT TOKEN MINT]',
+  initialSupply: 1_000_000_000,
+  rpcEndpoints: [
+    'https://api.mainnet-beta.solana.com'
+  ]
+};
+
+function formatTokenAmount(value) {
+  if (!Number.isFinite(value)) return '--';
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: value >= 1 ? 0 : 4 }).format(value);
+}
+
+function isConfiguredMint(value) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value || '');
+}
+
+function setWidgetState({ burned, left, percent, updated, mint, error }) {
+  document.getElementById('burnedTotal').textContent = error ? '--' : formatTokenAmount(burned);
+  document.getElementById('supplyLeft').textContent = error ? '--' : formatTokenAmount(left);
+  document.getElementById('burnPercent').textContent = error ? '--' : `${percent.toFixed(2)}%`;
+  document.getElementById('burnUpdated').textContent = error || !updated ? (error || 'Waiting for config') : updated;
+  document.getElementById('burnMint').textContent = mint || '[INSERT TOKEN MINT]';
+  document.getElementById('burnProgress').style.width = error ? '0%' : `${Math.max(0, Math.min(percent, 100))}%`;
+}
+
+async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getTokenSupply',
+      params: [mintAddress]
+    })
+  });
+
+  if (!response.ok) throw new Error(`RPC ${response.status}`);
+  const payload = await response.json();
+  const supply = Number(payload?.result?.value?.uiAmountString ?? payload?.result?.value?.uiAmount);
+  if (!Number.isFinite(supply)) throw new Error('Supply unavailable');
+  return supply;
+}
+
+async function refreshBurnStats() {
+  const mintAddress = WIZARD_TOKENOMICS.mintAddress;
+  if (!isConfiguredMint(mintAddress)) {
+    setWidgetState({ error: 'Add your real token mint', mint: mintAddress });
+    return;
+  }
+
+  for (const endpoint of WIZARD_TOKENOMICS.rpcEndpoints) {
+    try {
+      const currentSupply = await fetchTokenSupplyFromRpc(endpoint, mintAddress);
+      const left = Math.max(0, currentSupply);
+      const burned = Math.max(0, WIZARD_TOKENOMICS.initialSupply - left);
+      const percent = (burned / WIZARD_TOKENOMICS.initialSupply) * 100;
+      setWidgetState({
+        burned,
+        left,
+        percent,
+        updated: new Date().toLocaleString(),
+        mint: mintAddress
+      });
+      return;
+    } catch (error) {
+      continue;
+    }
+  }
+
+  setWidgetState({ error: 'Supply temporarily unavailable', mint: mintAddress });
+}
+
+refreshBurnStats();
+setInterval(refreshBurnStats, 60000);
+
+const chatToggle = document.getElementById('chatToggle');
+const chatPanel = document.getElementById('chatPanel');
+const chatClose = document.getElementById('chatClose');
+if (chatToggle && chatPanel) {
+  chatToggle.addEventListener('click', () => {
+    chatPanel.classList.toggle('open');
+  });
+}
+if (chatClose && chatPanel) {
+  chatClose.addEventListener('click', () => {
+    chatPanel.classList.remove('open');
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>WIZARD TOOLZ | Privacy</title>
+<meta name="theme-color" content="#050507">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="apple-touch-icon" href="favicon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050507;--bg2:#0c0c10;--border:rgba(255,255,255,.08);--text:#ececf0;--muted:#8b8b96;--white:#fff;--gold:#c8a84b}
+*{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;line-height:1.7}
+a{text-decoration:none;color:inherit}.container{width:100%;max-width:980px;margin:0 auto;padding:0 24px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;padding:12px 22px;font-size:14px;font-weight:600}
+.btn-primary{background:var(--gold);color:#000}.btn-outline{border:1px solid var(--border);background:rgba(255,255,255,.03)}
+nav{position:sticky;top:0;background:rgba(5,5,7,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
+.nav-inner{min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px}.nav-logo{display:flex;align-items:center;gap:12px;font-family:'Cinzel',serif;font-size:20px;font-weight:700}.nav-logo img{width:40px;height:40px;border-radius:10px}
+.hero,.section{padding:56px 0}.tag{display:inline-block;padding:5px 12px;border-radius:999px;border:1px solid rgba(200,168,75,.25);color:var(--gold);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+h1,h2{font-family:'Cinzel',serif;color:var(--white);line-height:1.15}.hero h1{font-size:clamp(34px,6vw,62px);margin:18px 0 12px}.section h2{font-size:clamp(28px,4vw,42px);margin-bottom:14px}
+p{color:var(--muted);font-size:16px}.stack{display:grid;gap:18px;margin-top:28px}.card{background:var(--bg2);border:1px solid var(--border);border-radius:22px;padding:24px}
+.card h3{font-family:'Cinzel',serif;font-size:20px;margin-bottom:10px}.card ul{padding-left:18px;color:var(--muted)}.card li{margin:8px 0}
+footer{padding:28px 0 52px;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<nav>
+  <div class="container nav-inner">
+    <a class="nav-logo" href="index.html"><img src="trendingtoolz logo.png" alt="Wizard Toolz"><span>Wizard Toolz</span></a>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a class="btn btn-outline" href="index.html">Main Site</a>
+      <a class="btn btn-outline" href="terms.html">Terms</a>
+      <a class="btn btn-outline" href="security.html">Security</a>
+      <a class="btn btn-primary" href="https://t.me/wizard_toolz" target="_blank">Support</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <span class="tag">Privacy</span>
+    <h1>Privacy Policy</h1>
+    <p>Wizard Toolz is built to collect the minimum practical information needed to operate the Telegram bot, process feature flows, support users, and keep the platform stable.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container stack">
+    <div class="card">
+      <h3>What We Collect</h3>
+      <p>We may store Telegram account identifiers, feature settings, generated wallet addresses, order records, activity logs, and other setup data needed to run the platform.</p>
+      <ul>
+        <li>Telegram user IDs and bot interaction state</li>
+        <li>Wallet addresses and tool configuration data</li>
+        <li>Payment matching records and order history</li>
+        <li>Error logs, status logs, and support-relevant operational data</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>How We Use It</h3>
+      <p>We use this information to operate the bot, deliver requested services, prevent abuse, investigate issues, and improve platform reliability.</p>
+      <ul>
+        <li>Run automations and restore feature state after refreshes or restarts</li>
+        <li>Match payments and confirm service execution</li>
+        <li>Investigate problems, bugs, or refund cases when needed</li>
+        <li>Support users and improve feature quality over time</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Private Keys and Sensitive Data</h3>
+      <p>Some tools require wallet access. Those flows should always be treated as hot-wallet flows. Users should only provide keys or fund wallets they intentionally want to use with automation.</p>
+      <ul>
+        <li>Do not submit more funds than you are prepared to automate</li>
+        <li>Rotate or retire hot wallets when appropriate</li>
+        <li>Use caution with any private key shared into bot-controlled flows</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Third-Party Services</h3>
+      <p>Some features rely on outside providers, routing systems, RPC services, or social/media delivery partners. Those providers may have their own data handling practices.</p>
+    </div>
+    <div class="card">
+      <h3>Contact</h3>
+      <p>If you have privacy questions, support issues, or want clarification about any feature flow, contact support at <a href="https://t.me/wizard_toolz" target="_blank">@wizard_toolz</a>.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">Wizard Toolz Privacy Policy • <a href="https://x.com/wizardtoolz" target="_blank">x.com/wizardtoolz</a> • <a href="https://t.me/wizard_toolz" target="_blank">@wizard_toolz</a></div>
+</footer>
+</body>
+</html>
