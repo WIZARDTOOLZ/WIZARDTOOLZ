@@ -10491,29 +10491,7 @@ async function sendStakingClaimRewards(user) {
     throw new Error('Rewards vault does not have enough SOL for this claim yet.');
   }
 
-  const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
-  const transaction = new Transaction({
-    feePayer: signer.publicKey,
-    recentBlockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }).add(
-    SystemProgram.transfer({
-      fromPubkey: signer.publicKey,
-      toPubkey: destination,
-      lamports: state.claimableLamports,
-    }),
-  );
-
-  const signature = await chainConnection.sendTransaction(transaction, [signer], {
-    preflightCommitment: 'confirmed',
-    maxRetries: 3,
-  });
-
-  await chainConnection.confirmTransaction({
-    signature,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }, 'confirmed');
+  const signature = await sendConfirmedSolTransfer(signer, destination, state.claimableLamports);
 
   return {
     signature,
@@ -10533,6 +10511,35 @@ async function getBurnAgentBalanceLamports(agent) {
   }
 }
 
+async function sendConfirmedSolTransfer(signer, destination, lamports) {
+  const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
+  const transaction = new Transaction({
+    feePayer: signer.publicKey,
+    recentBlockhash: latestBlockhash.blockhash,
+    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+  }).add(
+    SystemProgram.transfer({
+      fromPubkey: signer.publicKey,
+      toPubkey: destination,
+      lamports,
+    }),
+  );
+
+  transaction.sign(signer);
+  const signature = await chainConnection.sendRawTransaction(transaction.serialize(), {
+    skipPreflight: true,
+    maxRetries: 3,
+  });
+
+  await chainConnection.confirmTransaction({
+    signature,
+    blockhash: latestBlockhash.blockhash,
+    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+  }, 'confirmed');
+
+  return signature;
+}
+
 async function withdrawBurnAgentFunds(agent, destinationAddress) {
   if (!agent?.walletSecretKeyB64 || !agent?.walletAddress) {
     throw new Error('This agent wallet is not ready yet.');
@@ -10547,29 +10554,7 @@ async function withdrawBurnAgentFunds(agent, destinationAddress) {
     throw new Error('No withdrawable SOL is available after fee reserve.');
   }
 
-  const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
-  const transaction = new Transaction({
-    feePayer: signer.publicKey,
-    recentBlockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }).add(
-    SystemProgram.transfer({
-      fromPubkey: signer.publicKey,
-      toPubkey: destination,
-      lamports: withdrawLamports,
-    }),
-  );
-
-  const signature = await chainConnection.sendTransaction(transaction, [signer], {
-    preflightCommitment: 'confirmed',
-    maxRetries: 3,
-  });
-
-  await chainConnection.confirmTransaction({
-    signature,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }, 'confirmed');
+  const signature = await sendConfirmedSolTransfer(signer, destination, withdrawLamports);
 
   return {
     signature,
@@ -10619,29 +10604,7 @@ async function withdrawOrganicOrderFunds(order, destinationAddress) {
       continue;
     }
 
-    const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
-    const transaction = new Transaction({
-      feePayer: signer.publicKey,
-      recentBlockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-    }).add(
-      SystemProgram.transfer({
-        fromPubkey: signer.publicKey,
-        toPubkey: destination,
-        lamports: withdrawLamports,
-      }),
-    );
-
-    const signature = await chainConnection.sendTransaction(transaction, [signer], {
-      preflightCommitment: 'confirmed',
-      maxRetries: 3,
-    });
-
-    await chainConnection.confirmTransaction({
-      signature,
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-    }, 'confirmed');
+    const signature = await sendConfirmedSolTransfer(signer, destination, withdrawLamports);
 
     totalWithdrawLamports += withdrawLamports;
     signatures.push(signature);
