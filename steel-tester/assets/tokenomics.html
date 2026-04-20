@@ -388,7 +388,7 @@ nav{
     <div class="meta">
       <div class="panel">
         <span class="metric-label">Token Mint / CA</span>
-        <div style="font-family:'DM Mono',monospace;font-size:13px;word-break:break-all" id="burnMint">[INSERT TOKEN MINT]</div>
+        <div style="font-family:'DM Mono',monospace;font-size:13px;word-break:break-all" id="burnMint">HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump</div>
       </div>
       <div class="panel">
         <span class="metric-label">Measurement Method</span>
@@ -514,8 +514,8 @@ nav{
   <div class="container">
     <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;align-items:center;">
       <div>Wizard Toolz Tokenomics</div>
-      <div>Token: <code>Launching Soon</code></div>
-      <div>Mint / CA: <code>[INSERT TOKEN MINT]</code></div>
+      <div>Token: <code>$WIZTOOLZ</code></div>
+      <div>Mint / CA: <code>HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump</code></div>
       <div><a href="https://x.com/wizardtoolz" target="_blank">x.com/wizardtoolz</a></div>
       <div><a href="privacy.html">Privacy</a></div>
       <div><a href="terms.html">Terms</a></div>
@@ -560,7 +560,7 @@ nav{
 
 <script>
 const WIZARD_TOKENOMICS = {
-  mintAddress: '[INSERT TOKEN MINT]',
+  mintAddress: 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump',
   initialSupply: 1_000_000_000,
   rpcEndpoints: [
     'https://api.mainnet-beta.solana.com'
@@ -592,7 +592,7 @@ function isConfiguredMint(value) {
 function setWidgetState({ burned, left, percent, updated, mint, error }) {
   document.getElementById('burnedTotal').textContent = error ? '--' : formatTokenAmount(burned);
   document.getElementById('burnUpdated').textContent = error || !updated ? (error || 'Waiting for config') : updated;
-  document.getElementById('burnMint').textContent = mint || '[INSERT TOKEN MINT]';
+  document.getElementById('burnMint').textContent = mint || 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump';
 }
 
 async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {

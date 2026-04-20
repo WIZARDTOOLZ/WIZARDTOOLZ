@@ -988,8 +988,11 @@ function isConfiguredAddress(value) {
   return Boolean(value && !String(value).includes('PLACEHOLDER'));
 }
 
+const LIVE_WIZARD_TOKEN_MINT = 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump';
+
 function buildPlatformRevenueConfig(devWalletSigner) {
   const tokenMint = process.env.WIZARD_TOKEN_MINT?.trim()
+    || LIVE_WIZARD_TOKEN_MINT
     || process.env.PUMP_CREATOR_REWARD_MINT?.trim()
     || process.env.DEV_WALLET_SWAP_TARGET_MINT?.trim()
     || null;

@@ -1024,7 +1024,7 @@ footer{
     </div>
     <div class="hero-ca">
       <span class="hero-ca-label">Token</span>
-      <span>Launching Soon</span>
+      <span>$WIZTOOLZ</span>
     </div>
   </div>
 </section>
@@ -1706,7 +1706,7 @@ footer{
       <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank" style="font-size:15px;padding:16px 32px;">Contact Support</a>
     </div>
     <div class="cta-links reveal">
-      <span>Token: <span style="font-family:'DM Mono',monospace;font-size:12px;">Launching Soon</span></span>
+      <span>Token: <span style="font-family:'DM Mono',monospace;font-size:12px;">$WIZTOOLZ</span></span>
       <span>&bull;</span>
       <a href="https://t.me/wizardtoolz">t.me/wizardtoolz</a>
       <span>&bull;</span>
@@ -1751,7 +1751,7 @@ footer{
       <span class="burn-stat-value" id="burnedTotal">--</span>
     </div>
     <div class="burn-widget-meta">
-      <span>Token Mint: <code id="burnMint">[INSERT TOKEN MINT]</code></span>
+      <span>Token Mint: <code id="burnMint">HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump</code></span>
       <span>Last updated: <strong id="burnUpdated" style="color:var(--white);">Waiting for config</strong></span>
     </div>
     <div class="burn-widget-actions">
@@ -1799,7 +1799,7 @@ footer{
      ============================================================ -->
 <script>
 const WIZARD_TOKENOMICS = {
-  mintAddress: '[INSERT TOKEN MINT]',
+  mintAddress: 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump',
   initialSupply: 1_000_000_000,
   rpcEndpoints: [
     'https://api.mainnet-beta.solana.com'
@@ -1839,7 +1839,7 @@ function setBurnWidgetState({ burned, left, percent, updated, mint, error }) {
 
   burnedNode.textContent = error ? '--' : formatTokenAmount(burned);
   updatedNode.textContent = error || !updated ? (error || 'Waiting for config') : updated;
-  mintNode.textContent = mint || '[INSERT TOKEN MINT]';
+  mintNode.textContent = mint || 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump';
 }
 
 async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
