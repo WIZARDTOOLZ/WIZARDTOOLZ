@@ -2511,6 +2511,8 @@ function createDefaultStakingState() {
     trackingStartedAt: null,
     lastBalanceSyncedAt: null,
     lastRewardsAllocatedAt: null,
+    rewardsVaultAddress: process.env.WIZARD_REWARDS_VAULT_ADDRESS?.trim() || 'CEBWd55pmEPbvTegGWffeXvN7RvpPdFcxZsoXsTRXr1s',
+    rewardsVaultBalanceLamports: 0,
     currentWeightLabel: 'Starting',
     lastError: null,
   };
@@ -2583,6 +2585,12 @@ function normalizeStakingState(state = {}) {
     trackingStartedAt: typeof state.trackingStartedAt === 'string' ? state.trackingStartedAt : null,
     lastBalanceSyncedAt: typeof state.lastBalanceSyncedAt === 'string' ? state.lastBalanceSyncedAt : null,
     lastRewardsAllocatedAt: typeof state.lastRewardsAllocatedAt === 'string' ? state.lastRewardsAllocatedAt : null,
+    rewardsVaultAddress: typeof state.rewardsVaultAddress === 'string'
+      ? state.rewardsVaultAddress
+      : defaults.rewardsVaultAddress,
+    rewardsVaultBalanceLamports: Number.isInteger(state.rewardsVaultBalanceLamports)
+      ? state.rewardsVaultBalanceLamports
+      : defaults.rewardsVaultBalanceLamports,
     currentWeightLabel: typeof state.currentWeightLabel === 'string'
       ? state.currentWeightLabel
       : defaults.currentWeightLabel,
@@ -10530,6 +10538,20 @@ async function getBurnAgentBalanceLamports(agent) {
   }
 }
 
+async function getRewardsVaultBalanceLamports() {
+  const address = process.env.WIZARD_REWARDS_VAULT_ADDRESS?.trim() || 'CEBWd55pmEPbvTegGWffeXvN7RvpPdFcxZsoXsTRXr1s';
+  if (!address) {
+    return { address: null, lamports: 0 };
+  }
+
+  try {
+    const lamports = await chainConnection.getBalance(new PublicKey(address), 'confirmed');
+    return { address, lamports };
+  } catch {
+    return { address, lamports: 0 };
+  }
+}
+
 async function sendConfirmedSolTransfer(signer, destination, lamports) {
   const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
   const transaction = new Transaction();
@@ -11197,6 +11219,8 @@ function stakingText(user) {
     `- Status: *${stakingStatusLabel(state)}*`,
     `- Rewards asset: *${state.rewardsAsset}*`,
     `- Manual claim only: *${state.manualClaimOnly ? 'Yes' : 'No'}*`,
+    `- Rewards vault: ${state.rewardsVaultAddress ? `\`${state.rewardsVaultAddress}\`` : '*Not set*'}`,
+    `- Rewards vault balance: *${formatSolAmountFromLamports(state.rewardsVaultBalanceLamports || 0)} SOL*`,
     `- Linked wallet: ${state.walletAddress ? `\`${state.walletAddress}\`` : '*Not linked yet*'}`,
     `- Active Buy / Sell wallet: ${activeWallet?.address ? `\`${activeWallet.address}\`` : '*None selected*'}`,
     `- Total tracked: *${state.totalStakedDisplay} WIZARD TOOLZ*`,
@@ -12086,7 +12110,18 @@ async function renderScreen(ctx, route, user) {
       await editOrReplyMedia(ctx, 'sniper_wizard', sniperWizardEditorText(user), makeSniperWizardKeyboard(user));
       return;
     case 'staking':
-      await editOrReplyMedia(ctx, 'staking', stakingText(user), makeStakingKeyboard(user));
+      {
+        const vault = await getRewardsVaultBalanceLamports();
+        const stakingUser = {
+          ...user,
+          staking: normalizeStakingState({
+            ...user.staking,
+            rewardsVaultAddress: vault.address || user.staking?.rewardsVaultAddress,
+            rewardsVaultBalanceLamports: vault.lamports,
+          }),
+        };
+        await editOrReplyMedia(ctx, 'staking', stakingText(stakingUser), makeStakingKeyboard(stakingUser));
+      }
       return;
     case 'vanity_wallet':
       await editOrReplyMedia(ctx, 'vanity_wallet', vanityWalletText(user), makeVanityWalletKeyboard(user));

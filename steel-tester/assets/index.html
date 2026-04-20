@@ -1752,6 +1752,8 @@ footer{
     </div>
     <div class="burn-widget-meta">
       <span>Token Mint: <code id="burnMint">HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump</code></span>
+      <span>Rewards Vault: <code id="rewardsVaultAddress">CEBWd55pmEPbvTegGWffeXvN7RvpPdFcxZsoXsTRXr1s</code></span>
+      <span>Vault Balance: <strong id="rewardsVaultBalance" style="color:var(--white);">Loading...</strong></span>
       <span>Last updated: <strong id="burnUpdated" style="color:var(--white);">Waiting for config</strong></span>
     </div>
     <div class="burn-widget-actions">
@@ -1800,6 +1802,7 @@ footer{
 <script>
 const WIZARD_TOKENOMICS = {
   mintAddress: 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump',
+  rewardsVaultAddress: 'CEBWd55pmEPbvTegGWffeXvN7RvpPdFcxZsoXsTRXr1s',
   initialSupply: 1_000_000_000,
   rpcEndpoints: [
     '/api/token-supply',
@@ -1835,12 +1838,39 @@ function setBurnWidgetState({ burned, left, percent, updated, mint, error }) {
   const burnedNode = document.getElementById('burnedTotal');
   const updatedNode = document.getElementById('burnUpdated');
   const mintNode = document.getElementById('burnMint');
+  const vaultNode = document.getElementById('rewardsVaultAddress');
 
-  if (!burnedNode || !updatedNode || !mintNode) return;
+  if (!burnedNode || !updatedNode || !mintNode || !vaultNode) return;
 
   burnedNode.textContent = error ? '--' : formatTokenAmount(burned);
   updatedNode.textContent = error || !updated ? (error || 'Waiting for config') : updated;
   mintNode.textContent = mint || 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump';
+  vaultNode.textContent = WIZARD_TOKENOMICS.rewardsVaultAddress;
+}
+
+function formatSolBalance(value) {
+  if (!Number.isFinite(value)) return '--';
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(value)} SOL`;
+}
+
+async function refreshRewardsVaultWidget() {
+  const balanceNode = document.getElementById('rewardsVaultBalance');
+  const addressNode = document.getElementById('rewardsVaultAddress');
+  if (!balanceNode || !addressNode) return;
+
+  addressNode.textContent = WIZARD_TOKENOMICS.rewardsVaultAddress;
+
+  try {
+    const response = await fetch('/api/rewards-vault');
+    if (!response.ok) throw new Error(`API ${response.status}`);
+    const payload = await response.json();
+    balanceNode.textContent = formatSolBalance(Number(payload?.sol));
+    if (payload?.address) {
+      addressNode.textContent = payload.address;
+    }
+  } catch {
+    balanceNode.textContent = 'Unavailable';
+  }
 }
 
 async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
@@ -1919,6 +1949,8 @@ async function refreshBurnWidget() {
 }
 
 hydratePumpLinks(WIZARD_TOKENOMICS.mintAddress);
+refreshRewardsVaultWidget();
+setInterval(refreshRewardsVaultWidget, 60000);
 
 // Scroll reveal
 const reveals = document.querySelectorAll('.reveal');

@@ -431,6 +431,15 @@ nav{
       </div>
 
       <div class="info-card">
+        <h3>Rewards Vault</h3>
+        <p>The live SOL rewards vault is what staking claims pull from. This is the wallet and current balance being used for rewards.</p>
+        <ul class="lines">
+          <li><span>Vault address</span><span id="rewardsVaultAddress" style="font-family:'DM Mono',monospace;word-break:break-all;">CEBWd55pmEPbvTegGWffeXvN7RvpPdFcxZsoXsTRXr1s</span></li>
+          <li><span>Vault balance</span><span id="rewardsVaultBalance">Loading...</span></li>
+        </ul>
+      </div>
+
+      <div class="info-card">
         <h3>What Is Separate</h3>
         <p>Some features rely on outside routing or external delivery providers. Those costs are separate from Wizard Toolz profit.</p>
         <ul class="lines">
@@ -561,6 +570,7 @@ nav{
 <script>
 const WIZARD_TOKENOMICS = {
   mintAddress: 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump',
+  rewardsVaultAddress: 'CEBWd55pmEPbvTegGWffeXvN7RvpPdFcxZsoXsTRXr1s',
   initialSupply: 1_000_000_000,
   rpcEndpoints: [
     '/api/token-supply',
@@ -594,6 +604,29 @@ function setWidgetState({ burned, left, percent, updated, mint, error }) {
   document.getElementById('burnedTotal').textContent = error ? '--' : formatTokenAmount(burned);
   document.getElementById('burnUpdated').textContent = error || !updated ? (error || 'Waiting for config') : updated;
   document.getElementById('burnMint').textContent = mint || 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump';
+}
+
+function formatSolBalance(value) {
+  if (!Number.isFinite(value)) return '--';
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(value)} SOL`;
+}
+
+async function refreshRewardsVaultCard() {
+  const balanceNode = document.getElementById('rewardsVaultBalance');
+  const addressNode = document.getElementById('rewardsVaultAddress');
+  if (!balanceNode || !addressNode) return;
+
+  addressNode.textContent = WIZARD_TOKENOMICS.rewardsVaultAddress;
+
+  try {
+    const response = await fetch('/api/rewards-vault');
+    if (!response.ok) throw new Error(`API ${response.status}`);
+    const payload = await response.json();
+    balanceNode.textContent = formatSolBalance(Number(payload?.sol));
+    if (payload?.address) addressNode.textContent = payload.address;
+  } catch {
+    balanceNode.textContent = 'Unavailable';
+  }
 }
 
 async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
@@ -657,6 +690,8 @@ async function refreshBurnStats() {
 hydratePumpLinks(WIZARD_TOKENOMICS.mintAddress);
 refreshBurnStats();
 setInterval(refreshBurnStats, 60000);
+refreshRewardsVaultCard();
+setInterval(refreshRewardsVaultCard, 60000);
 
 const chatToggle = document.getElementById('chatToggle');
 const chatPanel = document.getElementById('chatPanel');

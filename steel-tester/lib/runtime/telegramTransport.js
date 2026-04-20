@@ -72,6 +72,31 @@ async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
   return supply;
 }
 
+async function fetchLamportBalanceFromRpc(endpoint, address) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getBalance',
+      params: [address],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`RPC ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const lamports = Number(payload?.result?.value);
+  if (!Number.isFinite(lamports)) {
+    throw new Error('Balance unavailable');
+  }
+
+  return lamports;
+}
+
 function resolveWebsiteAssetPath(urlPathname) {
   const sanitizedPath = decodeURIComponent(urlPathname || '/');
   const normalizedPath = sanitizedPath === '/'
@@ -161,6 +186,36 @@ export async function startWebhookTransport(bot, cfg) {
 
       res.writeHead(502, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'supply_unavailable', mint: mintAddress }));
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/rewards-vault') {
+      const rewardsVaultAddress = process.env.WIZARD_REWARDS_VAULT_ADDRESS?.trim() || null;
+      if (!rewardsVaultAddress) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'rewards_vault_not_configured' }));
+        return;
+      }
+
+      for (const endpoint of cfg.solanaRpcUrls || []) {
+        try {
+          const lamports = await fetchLamportBalanceFromRpc(endpoint, rewardsVaultAddress);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            ok: true,
+            address: rewardsVaultAddress,
+            lamports,
+            sol: lamports / 1_000_000_000,
+            endpoint,
+          }));
+          return;
+        } catch {
+          continue;
+        }
+      }
+
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'balance_unavailable', address: rewardsVaultAddress }));
       return;
     }
 
