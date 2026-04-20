@@ -10586,42 +10586,75 @@ async function withdrawOrganicOrderFunds(order, destinationAddress) {
     throw new Error('Free-trial wallets are platform-managed and cannot be withdrawn from Telegram.');
   }
 
-  const signer = decodeBurnAgentWallet(order.walletSecretKeyB64);
   const destination = new PublicKey(destinationAddress);
-  const balanceLamports = await chainConnection.getBalance(signer.publicKey, 'confirmed');
-  const withdrawLamports = Math.max(0, balanceLamports - BURN_AGENT_WITHDRAW_RESERVE_LAMPORTS);
+  const walletEntries = [
+    {
+      address: order.walletAddress,
+      secretKeyB64: order.walletSecretKeyB64,
+    },
+    ...(Array.isArray(order.workerWallets) ? order.workerWallets : []),
+    ...(Array.isArray(order.sellerWallets) ? order.sellerWallets : []),
+    ...(Array.isArray(order.buyerWallets) ? order.buyerWallets : []),
+  ].filter((wallet) => wallet?.address && wallet?.secretKeyB64);
 
-  if (withdrawLamports <= 0) {
+  const uniqueWallets = [];
+  const seenAddresses = new Set();
+  for (const wallet of walletEntries) {
+    if (seenAddresses.has(wallet.address)) {
+      continue;
+    }
+    seenAddresses.add(wallet.address);
+    uniqueWallets.push(wallet);
+  }
+
+  let totalWithdrawLamports = 0;
+  const signatures = [];
+
+  for (const wallet of uniqueWallets) {
+    const signer = decodeBurnAgentWallet(wallet.secretKeyB64);
+    const balanceLamports = await chainConnection.getBalance(signer.publicKey, 'confirmed');
+    const withdrawLamports = Math.max(0, balanceLamports - BURN_AGENT_WITHDRAW_RESERVE_LAMPORTS);
+
+    if (withdrawLamports <= 0) {
+      continue;
+    }
+
+    const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
+    const transaction = new Transaction({
+      feePayer: signer.publicKey,
+      recentBlockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    }).add(
+      SystemProgram.transfer({
+        fromPubkey: signer.publicKey,
+        toPubkey: destination,
+        lamports: withdrawLamports,
+      }),
+    );
+
+    const signature = await chainConnection.sendTransaction(transaction, [signer], {
+      preflightCommitment: 'confirmed',
+      maxRetries: 3,
+    });
+
+    await chainConnection.confirmTransaction({
+      signature,
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    }, 'confirmed');
+
+    totalWithdrawLamports += withdrawLamports;
+    signatures.push(signature);
+  }
+
+  if (totalWithdrawLamports <= 0) {
     throw new Error('No withdrawable SOL is available after fee reserve.');
   }
 
-  const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
-  const transaction = new Transaction({
-    feePayer: signer.publicKey,
-    recentBlockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }).add(
-    SystemProgram.transfer({
-      fromPubkey: signer.publicKey,
-      toPubkey: destination,
-      lamports: withdrawLamports,
-    }),
-  );
-
-  const signature = await chainConnection.sendTransaction(transaction, [signer], {
-    preflightCommitment: 'confirmed',
-    maxRetries: 3,
-  });
-
-  await chainConnection.confirmTransaction({
-    signature,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }, 'confirmed');
-
   return {
-    signature,
-    withdrawLamports,
+    signature: signatures[0],
+    signatures,
+    withdrawLamports: totalWithdrawLamports,
   };
 }
 
