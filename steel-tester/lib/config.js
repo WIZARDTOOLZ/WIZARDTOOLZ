@@ -1,5 +1,24 @@
 import { createHash } from 'node:crypto';
 
+function sanitizeExternalUrl(value) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const lowered = trimmed.toLowerCase();
+  if (
+    lowered.includes('your-render-url')
+    || lowered.includes('your-render-service')
+    || lowered.includes('example.com')
+    || lowered.includes('placeholder')
+  ) {
+    return null;
+  }
+
+  return trimmed;
+}
+
 export function normalizeWebhookPath(value) {
   if (!value) {
     return '/telegram/webhook';
@@ -55,10 +74,12 @@ export function createBotConfig({
   const magicBundleSplitNowFeeEstimateBps = parsePositiveInt(env.MAGIC_BUNDLE_SPLITNOW_FEE_ESTIMATE_BPS, 100);
   const magicBundleStealthSetupFeeLamports = parseSolToLamports(env.MAGIC_BUNDLE_STEALTH_SETUP_FEE_SOL || '0.05');
   const tradingHandlingFeeBps = parsePositiveInt(env.TRADING_HANDLING_FEE_BPS, 50);
+  const renderExternalUrl = sanitizeExternalUrl(env.RENDER_EXTERNAL_URL);
+  const configuredWebhookBaseUrl = sanitizeExternalUrl(env.TELEGRAM_WEBHOOK_BASE_URL);
   const telegramTransport = (env.TELEGRAM_TRANSPORT?.trim().toLowerCase()
-    || (env.RENDER_EXTERNAL_URL?.trim() ? 'webhook' : 'polling'));
-  const telegramWebhookBaseUrl = env.TELEGRAM_WEBHOOK_BASE_URL?.trim()
-    || env.RENDER_EXTERNAL_URL?.trim()
+    || (renderExternalUrl ? 'webhook' : 'polling'));
+  const telegramWebhookBaseUrl = configuredWebhookBaseUrl
+    || renderExternalUrl
     || null;
   const telegramWebhookPath = normalizeWebhookPath(
     env.TELEGRAM_WEBHOOK_PATH?.trim()
