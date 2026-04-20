@@ -357,7 +357,7 @@ nav{
   <div class="container">
     <span class="tag">Live Burn Widget</span>
     <h2>Burn Overview</h2>
-    <p class="section-sub">This page reads the token's live on-chain supply and gives a simple live estimate of how much has been burned and how much remains in circulation.</p>
+    <p class="section-sub">This page reads the token's live on-chain supply and shows a simple live estimate of how much has been burned.</p>
 
     <div class="metrics">
       <div class="metric">
@@ -365,20 +365,10 @@ nav{
         <span class="metric-value" id="burnedTotal">--</span>
       </div>
       <div class="metric">
-        <span class="metric-label">Supply Left</span>
-        <span class="metric-value" id="supplyLeft">--</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Burn Progress</span>
-        <span class="metric-value" id="burnPercent">--</span>
-      </div>
-      <div class="metric">
         <span class="metric-label">Last Refresh</span>
         <span class="metric-value" id="burnUpdated" style="font-size:18px">Waiting for config</span>
       </div>
     </div>
-
-    <div class="progress"><span id="burnProgress"></span></div>
 
     <div class="meta">
       <div class="panel">
@@ -586,11 +576,8 @@ function isConfiguredMint(value) {
 
 function setWidgetState({ burned, left, percent, updated, mint, error }) {
   document.getElementById('burnedTotal').textContent = error ? '--' : formatTokenAmount(burned);
-  document.getElementById('supplyLeft').textContent = error ? '--' : formatTokenAmount(left);
-  document.getElementById('burnPercent').textContent = error ? '--' : `${percent.toFixed(2)}%`;
   document.getElementById('burnUpdated').textContent = error || !updated ? (error || 'Waiting for config') : updated;
   document.getElementById('burnMint').textContent = mint || '[INSERT TOKEN MINT]';
-  document.getElementById('burnProgress').style.width = error ? '0%' : `${Math.max(0, Math.min(percent, 100))}%`;
 }
 
 async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {

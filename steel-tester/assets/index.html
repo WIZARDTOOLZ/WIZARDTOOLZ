@@ -123,7 +123,7 @@ button{cursor:pointer;border:none;background:none;font-family:inherit;}
 .burn-widget-body{padding:14px 16px 16px;}
 .burn-widget-grid{
   display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-columns:1fr;
   gap:10px;
   margin-bottom:12px;
 }
@@ -147,21 +147,6 @@ button{cursor:pointer;border:none;background:none;font-family:inherit;}
   font-size:20px;
   font-weight:700;
   line-height:1.2;
-}
-.burn-widget-progress{
-  height:10px;
-  border-radius:999px;
-  background:rgba(255,255,255,0.06);
-  overflow:hidden;
-  margin:12px 0 10px;
-}
-.burn-widget-progress > span{
-  display:block;
-  height:100%;
-  width:0%;
-  background:linear-gradient(90deg, #c8a84b, #f0d37b);
-  box-shadow:0 0 24px rgba(200,168,75,0.28);
-  transition:width .35s ease;
 }
 .burn-widget-meta{
   display:flex;
@@ -965,7 +950,6 @@ footer{
 @media(max-width:640px){
   .hero-ctas{flex-direction:column;align-items:center;}
   .btn{width:100%;justify-content:center;max-width:320px;}
-  .burn-widget-grid{grid-template-columns:1fr;}
   .burn-stat-value{font-size:18px;}
 }
 </style>
@@ -1767,14 +1751,8 @@ footer{
         <span class="burn-stat-label">Total Burned</span>
         <span class="burn-stat-value" id="burnedTotal">--</span>
       </div>
-      <div class="burn-stat">
-        <span class="burn-stat-label">Supply Left</span>
-        <span class="burn-stat-value" id="supplyLeft">--</span>
-      </div>
     </div>
-    <div class="burn-widget-progress"><span id="burnProgress"></span></div>
     <div class="burn-widget-meta">
-      <span>Burn progress: <strong id="burnPercent" style="color:var(--white);">--</strong></span>
       <span>Token Mint: <code id="burnMint">[INSERT TOKEN MINT]</code></span>
       <span>Last updated: <strong id="burnUpdated" style="color:var(--white);">Waiting for config</strong></span>
     </div>
@@ -1858,20 +1836,14 @@ function isConfiguredMint(value) {
 
 function setBurnWidgetState({ burned, left, percent, updated, mint, error }) {
   const burnedNode = document.getElementById('burnedTotal');
-  const leftNode = document.getElementById('supplyLeft');
-  const percentNode = document.getElementById('burnPercent');
   const updatedNode = document.getElementById('burnUpdated');
   const mintNode = document.getElementById('burnMint');
-  const progressNode = document.getElementById('burnProgress');
 
-  if (!burnedNode || !leftNode || !percentNode || !updatedNode || !mintNode || !progressNode) return;
+  if (!burnedNode || !updatedNode || !mintNode) return;
 
   burnedNode.textContent = error ? '--' : formatTokenAmount(burned);
-  leftNode.textContent = error ? '--' : formatTokenAmount(left);
-  percentNode.textContent = error ? '--' : `${percent.toFixed(2)}%`;
   updatedNode.textContent = error || !updated ? (error || 'Waiting for config') : updated;
   mintNode.textContent = mint || '[INSERT TOKEN MINT]';
-  progressNode.style.width = error ? '0%' : `${Math.max(0, Math.min(percent, 100))}%`;
 }
 
 async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
