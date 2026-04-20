@@ -106,6 +106,82 @@ button{cursor:pointer;border:none;background:none;font-family:inherit;}
   margin:0;
 }
 
+.burn-widget{
+  position:fixed;
+  right:18px;
+  bottom:18px;
+  width:min(240px, calc(100vw - 36px));
+  z-index:120;
+  background:rgba(12,12,16,0.92);
+  border:1px solid rgba(200,168,75,0.2);
+  box-shadow:0 18px 56px rgba(0,0,0,0.35);
+  border-radius:18px;
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  overflow:hidden;
+}
+.burn-widget-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:12px 14px 10px;
+  border-bottom:1px solid var(--border);
+}
+.burn-widget-title{
+  font-family:'Cinzel',serif;
+  font-size:14px;
+  color:var(--white);
+}
+.burn-widget-chip{
+  font-family:'DM Mono',monospace;
+  font-size:10px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--gold);
+}
+.burn-widget-body{padding:14px;}
+.burn-stat{
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px;
+}
+.burn-stat-label{
+  display:block;
+  font-size:10px;
+  color:var(--muted);
+  margin-bottom:6px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.burn-stat-value{
+  display:block;
+  color:var(--white);
+  font-size:19px;
+  font-weight:700;
+  line-height:1.2;
+}
+.burn-widget-meta{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  font-size:11px;
+  color:var(--muted);
+  margin-top:10px;
+}
+.burn-widget-meta code{
+  color:var(--text);
+  font-family:'DM Mono',monospace;
+  font-size:10px;
+  word-break:break-all;
+}
+.burn-widget-actions{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+}
+
 .tokenomics-grid{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -401,7 +477,8 @@ nav{
   transition:border-color .3s;
 }
 .nav-inner{
-  display:flex;align-items:center;justify-content:space-between;
+  display:grid;align-items:center;
+  grid-template-columns:auto minmax(0,1fr) auto;
   min-height:72px;gap:16px;
 }
 .nav-logo{
@@ -429,7 +506,7 @@ nav{
   white-space:nowrap;
 }
 .nav-links a:hover{color:var(--white);}
-.nav-ctas{display:flex;gap:10px;align-items:center;flex:0 0 auto;justify-content:flex-end;}
+.nav-ctas{display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0;}
 .hamburger{display:none;flex-direction:column;gap:5px;padding:4px;}
 .hamburger span{width:22px;height:2px;background:var(--text);border-radius:2px;transition:.3s;}
 
@@ -445,9 +522,11 @@ nav{
 
 @media(max-width:1180px){
   .nav-links{display:none;}
+  .nav-ctas .btn-outline{display:none;}
 }
 
 @media(max-width:980px){
+  .nav-ctas .btn-green{display:none;}
   .nav-ctas .btn{padding:10px 14px;font-size:12px;}
 }
 
@@ -462,6 +541,7 @@ nav{
   .nav-inner{gap:10px;}
   .nav-logo{font-size:14px;gap:7px;}
   .nav-logo img{width:28px;height:28px;border-radius:7px;}
+  .nav-ctas{display:none;}
   .nav-ctas .btn-primary{
     padding:10px 14px;
     font-size:12px;
@@ -901,6 +981,8 @@ footer{
       <li><a href="#faq">FAQ</a></li>
     </ul>
     <div class="nav-ctas">
+      <a class="btn btn-green" href="https://t.me/wizardtoolz" target="_blank">Join Community</a>
+      <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Follow X</a>
       <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot</a>
     </div>
     <button class="hamburger" aria-label="Menu">
@@ -1657,6 +1739,26 @@ footer{
     <div class="footer-copy">&copy; 2026 WIZARD TOOLZ</div>
   </div>
 </footer>
+
+<aside class="burn-widget" aria-live="polite">
+  <div class="burn-widget-top">
+    <div class="burn-widget-title">Burn Meter</div>
+    <div class="burn-widget-chip">Live</div>
+  </div>
+  <div class="burn-widget-body">
+    <div class="burn-stat">
+      <span class="burn-stat-label">Total Burned</span>
+      <span class="burn-stat-value" id="burnedTotal">--</span>
+    </div>
+    <div class="burn-widget-meta">
+      <span>Token Mint: <code id="burnMint">[INSERT TOKEN MINT]</code></span>
+      <span>Last updated: <strong id="burnUpdated" style="color:var(--white);">Waiting for config</strong></span>
+    </div>
+    <div class="burn-widget-actions">
+      <a class="btn btn-outline" href="tokenomics.html">Tokenomics</a>
+    </div>
+  </div>
+</aside>
 
 <aside class="chat-widget">
   <button class="chat-toggle" id="chatToggle" type="button">
