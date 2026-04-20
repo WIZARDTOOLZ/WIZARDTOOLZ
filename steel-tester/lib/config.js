@@ -49,9 +49,7 @@ export function createBotConfig({
   const missing = [];
   const telegramToken = env.TELEGRAM_BOT_TOKEN;
   if (!telegramToken) missing.push('TELEGRAM_BOT_TOKEN');
-
-  const defaultTarget = env.TARGET_URL;
-  if (!defaultTarget) missing.push('TARGET_URL');
+  const defaultTarget = env.TARGET_URL?.trim() || null;
 
   if (missing.length) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
