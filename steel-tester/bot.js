@@ -10513,11 +10513,11 @@ async function getBurnAgentBalanceLamports(agent) {
 
 async function sendConfirmedSolTransfer(signer, destination, lamports) {
   const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
-  const transaction = new Transaction({
-    feePayer: signer.publicKey,
-    recentBlockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }).add(
+  const transaction = new Transaction();
+  transaction.feePayer = signer.publicKey;
+  transaction.recentBlockhash = latestBlockhash.blockhash;
+  transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+  transaction.add(
     SystemProgram.transfer({
       fromPubkey: signer.publicKey,
       toPubkey: destination,
