@@ -7,7 +7,7 @@
 <meta name="description" content="WIZARD TOOLZ is a Solana growth, trading, launch, sniper, volume, and automation platform built around a Telegram bot, live chart support, and real operator tools.">
 <meta name="robots" content="index,follow">
 <meta name="theme-color" content="#050507">
-<link rel="canonical" href="https://wizardtoolz.onrender.com/">
+<link rel="canonical" href="https://wizardtoolz.trade/">
 <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 <link rel="apple-touch-icon" href="favicon-512.png">
 <link rel="manifest" href="site.webmanifest">
@@ -15,13 +15,13 @@
 <meta property="og:site_name" content="WIZARD TOOLZ">
 <meta property="og:title" content="WIZARD TOOLZ">
 <meta property="og:description" content="Solana growth, trading, launch, sniper, volume, and automation tools built around one Telegram bot.">
-<meta property="og:url" content="https://wizardtoolz.onrender.com/">
-<meta property="og:image" content="https://wizardtoolz.onrender.com/wizard-toolz-share.png">
+<meta property="og:url" content="https://wizardtoolz.trade/">
+<meta property="og:image" content="https://wizardtoolz.trade/wizard-toolz-share.png">
 <meta property="og:image:alt" content="WIZARD TOOLZ logo">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="WIZARD TOOLZ">
 <meta name="twitter:description" content="Solana growth, trading, launch, sniper, volume, and automation tools built around one Telegram bot.">
-<meta name="twitter:image" content="https://wizardtoolz.onrender.com/wizard-toolz-share.png">
+<meta name="twitter:image" content="https://wizardtoolz.trade/wizard-toolz-share.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -488,7 +488,7 @@ nav{
 .nav-logo{
   display:flex;align-items:center;gap:10px;
   font-family:'Cinzel',serif;
-  font-size:clamp(13px,1.05vw,16px);font-weight:700;
+  font-size:clamp(13px,1vw,15px);font-weight:700;
   color:var(--white);
   line-height:1.05;
   white-space:nowrap;
@@ -498,14 +498,14 @@ nav{
 .nav-logo img{width:32px;height:32px;object-fit:contain;border-radius:8px;}
 .nav-logo span{display:block;letter-spacing:.02em;}
 .nav-links{
-  display:none;align-items:center;gap:28px;
+  display:flex;align-items:center;gap:20px;
   list-style:none;
   flex:1 1 auto;
   justify-content:center;
   min-width:0;
 }
 .nav-links a{
-  font-size:13.5px;font-weight:500;color:var(--muted);
+  font-size:12.5px;font-weight:500;color:var(--muted);
   transition:color .2s;
   white-space:nowrap;
 }
@@ -516,14 +516,20 @@ nav{
 
 @media(max-width:1320px){
   .nav-inner{min-height:72px;padding:10px 0;}
-  .nav-logo{font-size:16px;gap:8px;}
+  .nav-logo{font-size:15px;gap:8px;}
   .nav-logo img{width:30px;height:30px;}
+  .nav-links{gap:16px;}
   .nav-ctas{gap:7px;}
-  .nav-ctas .btn{padding:11px 14px;font-size:12px;}
+  .nav-ctas .btn{padding:10px 13px;font-size:11.5px;}
   .hamburger{display:none;}
 }
 
+@media(max-width:1240px){
+  .nav-links a{font-size:12px;}
+}
+
 @media(max-width:1180px){
+  .nav-links{display:none;}
   .nav-ctas .btn-green:first-child{display:none;}
 }
 
@@ -978,9 +984,7 @@ footer{
     </a>
     <ul class="nav-links">
       <li><a href="#features">Features</a></li>
-      <li><a href="#pricing">Fees</a></li>
       <li><a href="tokenomics.html">Tokenomics</a></li>
-      <li><a href="#roadmap">Roadmap</a></li>
       <li><a href="#faq">FAQ</a></li>
     </ul>
     <div class="nav-ctas">
