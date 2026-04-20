@@ -47,6 +47,31 @@ async function serveStaticFile(res, filePath) {
   res.end(data);
 }
 
+async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getTokenSupply',
+      params: [mintAddress],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`RPC ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const supply = Number(payload?.result?.value?.uiAmountString ?? payload?.result?.value?.uiAmount);
+  if (!Number.isFinite(supply)) {
+    throw new Error('Supply unavailable');
+  }
+
+  return supply;
+}
+
 function resolveWebsiteAssetPath(urlPathname) {
   const sanitizedPath = decodeURIComponent(urlPathname || '/');
   const normalizedPath = sanitizedPath === '/'
@@ -107,6 +132,35 @@ export async function startWebhookTransport(bot, cfg) {
         transport: cfg.telegramTransport,
         webhookPath: cfg.telegramWebhookPath,
       }));
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/token-supply') {
+      const mintAddress = String(url.searchParams.get('mint') || '').trim();
+      if (!mintAddress) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'mint_required' }));
+        return;
+      }
+
+      for (const endpoint of cfg.solanaRpcUrls || []) {
+        try {
+          const supply = await fetchTokenSupplyFromRpc(endpoint, mintAddress);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            ok: true,
+            mint: mintAddress,
+            supply,
+            endpoint,
+          }));
+          return;
+        } catch {
+          continue;
+        }
+      }
+
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'supply_unavailable', mint: mintAddress }));
       return;
     }
 

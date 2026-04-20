@@ -563,6 +563,7 @@ const WIZARD_TOKENOMICS = {
   mintAddress: 'HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump',
   initialSupply: 1_000_000_000,
   rpcEndpoints: [
+    '/api/token-supply',
     'https://api.mainnet-beta.solana.com'
   ]
 };
@@ -596,6 +597,15 @@ function setWidgetState({ burned, left, percent, updated, mint, error }) {
 }
 
 async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
+  if (endpoint === '/api/token-supply') {
+    const response = await fetch(`/api/token-supply?mint=${encodeURIComponent(mintAddress)}`);
+    if (!response.ok) throw new Error(`API ${response.status}`);
+    const payload = await response.json();
+    const supply = Number(payload?.supply);
+    if (!Number.isFinite(supply)) throw new Error('Supply unavailable');
+    return supply;
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
