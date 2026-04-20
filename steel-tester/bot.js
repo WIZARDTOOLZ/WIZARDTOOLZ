@@ -6224,6 +6224,8 @@ makeHomeKeyboard = function makeHomeKeyboard() {
     .text('\u2139\uFE0F Info', 'nav:help')
     .text('\u{1F4CA} Status', 'nav:status')
     .row()
+    .url('\u{1FA99} Pump Coin', 'https://pump.fun/coin/HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump')
+    .row()
     .url('\u{1F4AC} Community', 'https://t.me/wizardtoolz')
     .url('\u{1F514} Alerts', 'https://t.me/wizardtoolz_alerts')
     .row()
