@@ -7949,18 +7949,28 @@ async function scanPumpCreatorRewards() {
     return;
   }
 
-  const vaultLamports = await pumpOnlineSdk.getCreatorVaultBalanceBothPrograms(cfg.devWalletSigner.publicKey);
-  await updateWorkerState((draft) => ({
-    ...draft,
-    pumpCreatorRewards: {
-      ...draft.pumpCreatorRewards,
-      lastCheckedAt: new Date().toISOString(),
-      lastVaultLamports: vaultLamports.toString(),
-      lastError: hasPendingActions ? draft.pumpCreatorRewards.lastError : null,
-    },
-  }));
-
   try {
+    let vaultLamports = new BN(0);
+    try {
+      vaultLamports = await pumpOnlineSdk.getCreatorVaultBalanceBothPrograms(cfg.devWalletSigner.publicKey);
+    } catch (error) {
+      const name = String(error?.name || '');
+      const message = String(error?.message || error || '');
+      if (!name.includes('TokenAccountNotFoundError') && !message.includes('TokenAccountNotFoundError')) {
+        throw error;
+      }
+    }
+
+    await updateWorkerState((draft) => ({
+      ...draft,
+      pumpCreatorRewards: {
+        ...draft.pumpCreatorRewards,
+        lastCheckedAt: new Date().toISOString(),
+        lastVaultLamports: vaultLamports.toString(),
+        lastError: hasPendingActions ? draft.pumpCreatorRewards.lastError : null,
+      },
+    }));
+
     if (BigInt(currentState.pendingBurnAmount || '0') > 0n) {
       await processPumpCreatorPendingBurn(currentState.pendingBurnAmount);
       return;
