@@ -1,0 +1,14 @@
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+wizard_toolz_staking = "Fg6PaFpoGXkYsidMpWxTWqkZgfXrRzPf7hhF5TzS2dQ"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test"
+

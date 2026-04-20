@@ -366,23 +366,30 @@ button{cursor:pointer;border:none;background:none;font-family:inherit;}
   font-size:14px;font-weight:600;letter-spacing:.02em;
   transition:all .2s ease;
   white-space:nowrap;
+  border:1px solid rgba(255,255,255,0.14);
 }
 .btn-primary{
-  background:var(--gold);
-  color:#000;
+  background:#f2f2f4;
+  color:#050507;
 }
-.btn-primary:hover{background:#d4b55c;transform:translateY(-1px);box-shadow:0 8px 32px rgba(200,168,75,0.3);}
+.btn-primary:hover{background:#ffffff;transform:translateY(-1px);box-shadow:0 10px 30px rgba(255,255,255,0.12);}
 .btn-outline{
-  border:1px solid var(--border2);
+  border:1px solid rgba(255,255,255,0.16);
   color:var(--text);
-  background:rgba(255,255,255,0.03);
+  background:rgba(255,255,255,0.04);
 }
-.btn-outline:hover{border-color:var(--gold);color:var(--gold);background:rgba(200,168,75,0.05);}
+.btn-outline:hover{border-color:rgba(255,255,255,0.34);color:#ffffff;background:rgba(255,255,255,0.09);}
 .btn-green{
-  background:var(--green);
-  color:#000;
+  background:#17171c;
+  color:#f2f2f4;
 }
-.btn-green:hover{background:#4deb94;transform:translateY(-1px);box-shadow:0 8px 32px rgba(61,220,132,0.3);}
+.btn-green:hover{background:#24242b;transform:translateY(-1px);box-shadow:0 10px 30px rgba(255,255,255,0.08);}
+.pump-logo{
+  width:16px;
+  height:16px;
+  display:block;
+  flex:0 0 16px;
+}
 
 /* CARDS */
 .card{
@@ -432,11 +439,11 @@ button{cursor:pointer;border:none;background:none;font-family:inherit;}
 .feat-card-img{
   width:100%;aspect-ratio:1/1;
   object-fit:cover;
-  opacity:.92;
-  filter:brightness(.95);
-  transition:opacity .3s;
+  opacity:1;
+  filter:none;
+  transition:transform .3s ease;
 }
-.feat-card:hover .feat-card-img{opacity:1;}
+.feat-card:hover .feat-card-img{transform:scale(1.01);}
 .feat-card-body{padding:22px 24px 24px;}
 .feat-card-body h3{
   font-family:'Cinzel',serif;
@@ -479,34 +486,55 @@ nav{
 }
 .nav-inner{
   display:flex;align-items:center;justify-content:space-between;
-  height:64px;gap:24px;
+  min-height:72px;gap:12px;
 }
 .nav-logo{
   display:flex;align-items:center;gap:10px;
   font-family:'Cinzel',serif;
-  font-size:18px;font-weight:700;
+  font-size:clamp(15px,1.5vw,18px);font-weight:700;
   color:var(--white);
+  line-height:1.05;
+  white-space:nowrap;
+  flex:0 0 auto;
 }
-.nav-logo img{width:36px;height:36px;object-fit:contain;border-radius:8px;}
+.nav-logo img{width:32px;height:32px;object-fit:contain;border-radius:8px;}
 .nav-links{
   display:flex;align-items:center;gap:28px;
   list-style:none;
+  flex:1 1 auto;
+  justify-content:center;
+  min-width:0;
 }
 .nav-links a{
   font-size:13.5px;font-weight:500;color:var(--muted);
   transition:color .2s;
+  white-space:nowrap;
 }
 .nav-links a:hover{color:var(--white);}
-.nav-ctas{display:flex;gap:10px;align-items:center;}
+.nav-ctas{display:flex;gap:8px;align-items:center;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;}
 .hamburger{display:none;flex-direction:column;gap:5px;padding:4px;}
 .hamburger span{width:22px;height:2px;background:var(--text);border-radius:2px;transition:.3s;}
 
-@media(max-width:768px){
+@media(max-width:1180px){
+  .nav-links{gap:18px;}
+  .nav-links a{font-size:12.5px;}
+  .nav-ctas .btn{padding:12px 14px;font-size:12px;}
+}
+
+@media(max-width:1080px){
+  .nav-ctas .btn-outline{display:none;}
+}
+
+@media(max-width:980px){
   .nav-links{display:none;}
   .hamburger{display:flex;}
-  .nav-ctas .btn-outline{display:none;}
   .nav-inner{height:auto;min-height:72px;padding:10px 0;}
   .nav-ctas{flex-wrap:wrap;justify-content:flex-end;}
+  .nav-logo{font-size:16px;}
+}
+
+@media(max-width:768px){
+  .nav-ctas .btn-green:first-child{display:none;}
 }
 
 /* ============================================================
@@ -524,13 +552,13 @@ nav{
   position:absolute;top:50%;left:50%;
   transform:translate(-50%,-55%);
   width:900px;height:600px;
-  background:radial-gradient(ellipse at center, rgba(200,168,75,0.08) 0%, transparent 65%);
+  background:none;
   pointer-events:none;
 }
 .hero-wizard{
   width:clamp(200px,28vw,320px);
   margin:0 auto 32px;
-  filter:drop-shadow(0 0 60px rgba(200,168,75,0.2));
+  filter:none;
   animation:float 6s ease-in-out infinite;
 }
 @keyframes float{
@@ -798,13 +826,13 @@ nav{
 }
 #cta::before{
   content:'';position:absolute;inset:0;
-  background:radial-gradient(ellipse at 50% 60%,rgba(200,168,75,0.07) 0%,transparent 65%);
+  background:none;
   pointer-events:none;
 }
 .cta-wizard{
   width:clamp(160px,20vw,240px);
   margin:0 auto 32px;
-  filter:drop-shadow(0 0 40px rgba(200,168,75,0.25));
+  filter:none;
 }
 .cta-title{
   font-family:'Cinzel',serif;
@@ -936,9 +964,10 @@ footer{
       <li><a href="#faq">FAQ</a></li>
     </ul>
     <div class="nav-ctas">
-      <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank">Join Community</a>
+      <a class="btn btn-green" data-pump-link href="https://pump.fun/create" target="_blank" rel="noopener noreferrer"><img class="pump-logo" src="pump-logomark.svg" alt="Pump.fun logo">Buy on Pump</a>
+      <a class="btn btn-green" href="https://t.me/wizardtoolz" target="_blank">Join Community</a>
       <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Follow X</a>
-      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot ✦</a>
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot</a>
     </div>
     <button class="hamburger" aria-label="Menu">
       <span></span><span></span><span></span>
@@ -955,26 +984,26 @@ footer{
     <img src="trendingtoolz volume image.png" class="hero-wizard" alt="Wizard Toolz">
     <div class="hero-eyebrow">
       <span class="live-dot"></span>
-      <span class="hero-eyebrow-text">Live on Solana • Growth, Trading, and Launch Infrastructure</span>
+      <span class="hero-eyebrow-text">Live on Solana | Growth, Trading, and Launch Infrastructure</span>
     </div>
     <h1 class="hero-title">
-      Wizardtoolz
+      WIZARD TOOLZ
     </h1>
     <p class="hero-sub">
       Volume. Visibility. Launches. Trading. Automation. Built for serious teams, serious traders, and real on-chart support.
     </p>
     <div class="hero-ctas">
       <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">
-        ✦ Open Telegram Bot
+        Open Telegram Bot
       </a>
-      <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank">
+      <a class="btn btn-green" href="https://t.me/wizardtoolz" target="_blank">
         Join Community
       </a>
       <a class="btn btn-outline" href="https://t.me/wizardtoolz_alerts" target="_blank">
-        🔔 Alerts Channel
+        Alerts Channel
       </a>
       <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">
-        𝕏 Follow X
+        Follow X
       </a>
     </div>
     <div class="hero-ca">
@@ -989,45 +1018,45 @@ footer{
      ============================================================ -->
 <div id="trust">
   <div class="trust-track" id="trustTrack">
-    <div class="trust-item"><span class="ti">🚀</span> <span>Reaction Booster</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">📈</span> <span>Volume Booster</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">🔥</span> <span>Burn Agent</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">⚡</span> <span>Sniper Wizard</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">✨</span> <span>Magic Sell</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">💎</span> <span>Bundle System</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">🎯</span> <span>Launch + Buy</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><strong style="color:var(--gold);">0.5% Fee</strong> <span>&mdash; half of competitors</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">👁️</span> <span>Wallet Tracker</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">🧾</span> <span>No Technical Skills Needed</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">🚀</span> <span>Reaction Booster</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">📈</span> <span>Volume Booster</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">🔥</span> <span>Burn Agent</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">⚡</span> <span>Sniper Wizard</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">✨</span> <span>Magic Sell</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">💎</span> <span>Bundle System</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">🎯</span> <span>Launch + Buy</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><strong style="color:var(--gold);">0.5% Fee</strong> <span>&mdash; half of competitors</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">👁️</span> <span>Wallet Tracker</span></div>
-    <div class="trust-sep">•</div>
-    <div class="trust-item"><span class="ti">🧾</span> <span>No Technical Skills Needed</span></div>
+    <div class="trust-item"><span class="ti">RXN</span> <span>Reaction Booster</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">VOL</span> <span>Volume Booster</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">BURN</span> <span>Burn Agent</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">SNIPE</span> <span>Sniper Wizard</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">SELL</span> <span>Magic Sell</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">BNDL</span> <span>Bundle System</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">L+B</span> <span>Launch + Buy</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><strong style="color:var(--gold);">0.5% Fee</strong> <span>&mdash; lower than every competitor we track</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">TRACK</span> <span>Wallet Tracker</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">EASY</span> <span>No Technical Skills Needed</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">RXN</span> <span>Reaction Booster</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">VOL</span> <span>Volume Booster</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">BURN</span> <span>Burn Agent</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">SNIPE</span> <span>Sniper Wizard</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">SELL</span> <span>Magic Sell</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">BNDL</span> <span>Bundle System</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">L+B</span> <span>Launch + Buy</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><strong style="color:var(--gold);">0.5% Fee</strong> <span>&mdash; lower than every competitor we track</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">TRACK</span> <span>Wallet Tracker</span></div>
+    <div class="trust-sep">&bull;</div>
+    <div class="trust-item"><span class="ti">EASY</span> <span>No Technical Skills Needed</span></div>
   </div>
 </div>
 
@@ -1111,7 +1140,7 @@ footer{
         <div class="feat-card-body">
           <span class="feat-badge badge-green">Launch</span>
           <h3>Launch + Buy</h3>
-          <p>Launch a new Pump-style token and instantly buy across multiple wallets. Normal or stealth mode. Built for teams who want full control from day one.</p>
+          <p>Launch a new Pump-style token and instantly buy across multiple wallets. Normal or stealth mode. Built for teams who want full control from day one. Fund early and the bot can warm buyer wallets before launch for cleaner wallet flow and faster execution. Generated launch wallets stay hidden by default inside your bot flow.</p>
         </div>
       </div>
 
@@ -1120,7 +1149,7 @@ footer{
         <div class="feat-card-body">
           <span class="feat-badge badge-gold">Snipe</span>
           <h3>Sniper Wizard</h3>
-          <p>Watch a wallet. The moment it launches a token, the wizard fires. Multi-wallet support, normal and stealth modes, configurable balance. Only 0.5% on successful snipes.</p>
+          <p>Watch a wallet. The moment it launches a token, the wizard fires. Multi-wallet support, normal and stealth modes, configurable balance, and wallet flows that stay hidden by default in your bot session. Fund early and let the bot warm sniper wallets before going live for better speed and cleaner wallet history.</p>
         </div>
       </div>
 
@@ -1129,7 +1158,7 @@ footer{
         <div class="feat-card-body">
           <span class="feat-badge badge-gold">Trading</span>
           <h3>Buy / Sell Desk</h3>
-          <p>Central trading hub inside Telegram &mdash; wallet tools, bundle tools, and fast actions, all in one place. Lower fees than most Telegram bots on the market.</p>
+          <p>Central trading hub inside Telegram &mdash; wallet tools, bundle tools, and fast actions, all in one place. Lower fees than every competitor we track.</p>
         </div>
       </div>
 
@@ -1138,7 +1167,7 @@ footer{
         <div class="feat-card-body">
           <span class="feat-badge badge-green">Utility</span>
           <h3>Vanity Wallet</h3>
-          <p>Create clean custom wallets with short start or end patterns directly through the bot. Quick, simple, and designed for people who want branded wallet identity without the headache.</p>
+          <p>Create clean custom wallets with short start or end patterns directly through the bot. Example: start with <strong>WIZ</strong> or end with <strong>TOOL</strong>. Private keys stay hidden by default until you reveal them in your own chat.</p>
         </div>
       </div>
 
@@ -1186,7 +1215,7 @@ footer{
           <span class="pill">Configure via Telegram</span>
           <span class="pill pill-gold">Powerful automation</span>
         </div>
-        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Try Volume Booster →</a>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Try Volume Booster ?</a>
       </div>
     </div>
   </div>
@@ -1207,14 +1236,14 @@ footer{
         <h2>Bundle System &amp; Launch + Buy</h2>
         <p>The bundle system spreads your capital across multiple wallets in one smooth flow. You choose Regular (straightforward) or Magic Bundle (stealth mode with extra privacy routing).</p>
         <p>After entry, you can set stop-loss, take-profit, trailing stops, and buy-dip orders &mdash; all managed right inside Telegram.</p>
-        <p><strong style="color:var(--white);">Launch + Buy</strong> takes it further &mdash; launch a brand new Pump-style token and immediately buy in across multiple wallets, all in one coordinated action. Launch wallets and sniper wallets can feed directly into the trading flow after entry.</p>
+        <p><strong style="color:var(--white);">Launch + Buy</strong> takes it further &mdash; launch a brand new Pump-style token and immediately buy in across multiple wallets, all in one coordinated action. Fund early and the bot can warm buyer wallets before launch so the live bundle fires faster and looks less freshly staged on-chain. Launch wallets and sniper wallets can feed directly into the trading flow after entry, and generated wallet keys stay hidden by default in the bot.</p>
         <div class="deep-pills">
           <span class="pill">Regular &amp; Stealth modes</span>
           <span class="pill pill-gold">Stop Loss / Take Profit</span>
           <span class="pill">Multi-wallet support</span>
           <span class="pill">Trailing stop orders</span>
         </div>
-        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Explore Bundles →</a>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Explore Bundles ?</a>
       </div>
     </div>
   </div>
@@ -1233,15 +1262,15 @@ footer{
       <div class="deep-content">
         <span class="tag">Snipe</span>
         <h2>Sniper Wizard</h2>
-        <p>Point the Sniper Wizard at any wallet. The moment that wallet launches a token on-chain, you're in &mdash; automatically, instantly, across as many wallets as you want.</p>
-        <p>Choose how much SOL to deploy per snipe, and whether to use standard or stealth routing. No manual watching. No missed launches.</p>
+        <p>Point the Sniper Wizard at any wallet. The moment that wallet launches a token on-chain, you're in &mdash; automatically, instantly, across as many wallets as you want.</p><p>For the fastest fire, fund early and let the bot warm the sniper wallet set before the watch goes live. That reduces last-second funding patterns and helps the hot path stay focused on buying.</p>
+        <p>Choose how much SOL to deploy per snipe, and whether to use standard or stealth routing. No manual watching. No missed launches. The worker wallet set is created for your flow and hidden by default unless you choose to reveal it.</p>
         <div class="deep-pills">
           <span class="pill pill-gold">0.5% handling fee</span>
           <span class="pill">Multi-wallet entry</span>
           <span class="pill">Stealth mode available</span>
           <span class="pill">Configurable balance</span>
         </div>
-        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Activate Sniper →</a>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Activate Sniper ?</a>
       </div>
     </div>
   </div>
@@ -1268,7 +1297,7 @@ footer{
           <span class="pill">Configurable rules</span>
           <span class="pill">Team-focused</span>
         </div>
-        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Contact Support for Setup →</a>
+        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Contact Support for Setup ?</a>
       </div>
     </div>
   </div>
@@ -1288,43 +1317,43 @@ footer{
     <div class="tools-grid">
 
       <div class="card reveal">
-        <div class="card-icon">👁️</div>
+        <div class="card-icon">&bull;</div>
         <h3>Wallet Tracker</h3>
         <p>Follow any wallet's on-chain activity in real time. Get notified of buys, sells, and new token launches. Perfect for tracking dev wallets or smart money you want to shadow.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">🔭</div>
+        <div class="card-icon">VIS</div>
         <h3>Vision</h3>
         <p>Watch selected X/Twitter accounts for community name changes. When a project rebrands or shifts, you'll know before most people. Early signal, competitive edge.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">👥</div>
+        <div class="card-icon">X</div>
         <h3>X Followers</h3>
         <p>Grow your X presence with follower packages. Choose your package, coordinate timing with support, and watch your numbers climb. Support confirmation is required before delivery.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">❤️</div>
+        <div class="card-icon">ENG</div>
         <h3>Engagement Services</h3>
         <p>Views, likes, reposts, clicks, and more &mdash; across X, Facebook, Reddit, Telegram, Discord, and TikTok. Contact support to discuss what you need and get a quote.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">🎤</div>
+        <div class="card-icon">SPC</div>
         <h3>Spaces Booster</h3>
         <p>X/Twitter Spaces listener packages &mdash; 500 listeners for 30 min or 120 min sessions. Confirm slot availability with support before payment. Proof of space beats empty rooms every time.</p>
       </div>
 
-      <div class="card reveal">
-        <div class="card-icon">🎨</div>
+        <div class="card reveal">
+        <div class="card-icon">VAN</div>
         <h3>Vanity Wallet</h3>
-        <p>Create custom vanity wallets with short clean prefixes or suffixes through the bot. Great for branding, team wallets, and launch presentation.</p>
+        <p>Create custom vanity wallets with short clean prefixes or suffixes through the bot. Example: start with <strong>WIZ</strong> or end with <strong>TOOL</strong>. Great for branding, team wallets, and launch presentation.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">✨</div>
+        <div class="card-icon">NEW</div>
         <h3>Custom Tools</h3>
         <p>Need something not listed here? Message support. The Wizard Toolz team builds custom Telegram tools for projects with specific needs. Tell us what you're trying to do.</p>
       </div>
@@ -1342,7 +1371,7 @@ footer{
       <span class="tag">Marketplace</span>
       <h2 class="section-title">Subscriptions &amp; Accounts</h2>
       <p class="section-sub" style="margin:12px auto 0;text-align:center;">
-        Need access to premium platforms without the full price? We offer subscriptions and accounts across a wide range of services. Message support for pricing and availability.
+        Need access to premium platforms, social accounts, or creative tools without the full price? We offer subscriptions and account-related services across a focused set of platforms. Message support for pricing and availability.
       </p>
     </div>
     <div class="subs-pills reveal">
@@ -1358,18 +1387,11 @@ footer{
       <span class="sub-pill">TikTok</span>
       <span class="sub-pill">X / Twitter</span>
       <span class="sub-pill">Telegram</span>
+      <span class="sub-pill">Reddit</span>
       <span class="sub-pill">Picsart</span>
-      <span class="sub-pill">Netflix</span>
-      <span class="sub-pill">Spotify</span>
-      <span class="sub-pill">Apple TV+</span>
-      <span class="sub-pill">Paramount+</span>
-      <span class="sub-pill">IPTV</span>
-      <span class="sub-pill">Deezer</span>
-      <span class="sub-pill">VBTV</span>
-      <span class="sub-pill">Megogo</span>
     </div>
     <div style="text-align:center;">
-      <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Message Support for Pricing →</a>
+      <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Message Support for Pricing ?</a>
     </div>
   </div>
 </section>
@@ -1393,7 +1415,7 @@ footer{
         <div class="fee-label">handling fee per trade</div>
       </div>
       <div class="fee-card featured">
-        <div class="fee-badge-top">✦ Our Rate</div>
+        <div class="fee-badge-top">? Our Rate</div>
         <div class="fee-name">Wizard Toolz</div>
         <div class="fee-num">0.5%</div>
         <div class="fee-label">handling fee per trade</div>
@@ -1404,7 +1426,7 @@ footer{
         Our 0.5% handling fee applies to trading routes we process &mdash; including sniper entries, bundle trades, and other handled actions. Some stealth features include a small extra routing cost. Volume trials are available for free. Everything else is explained clearly inside the bot.
       </p>
       <div style="margin-top:28px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Start for Free →</a>
+        <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Start for Free ?</a>
         <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Ask Support</a>
         <a class="btn btn-outline" href="tokenomics.html">View Tokenomics</a>
       </div>
@@ -1418,7 +1440,7 @@ footer{
       <span class="tag">Tokenomics</span>
       <h2 class="section-title">Where Fees Go.<br>Why Burns Matter.</h2>
       <p class="section-sub" style="margin:12px auto 0;text-align:center;">
-        Keep handled trading cheaper than the usual Telegram bot model, pass through outside routing only when needed, and route half of every platform fee we take back into on-chart support through the burn-side flow.
+        Keep handled trading lower than every competitor we track, pass through outside routing only when needed, and route net platform profit into a clear split: 50% treasury, 25% buyback + burn, and 25% SOL into the rewards vault.
       </p>
     </div>
     <div class="tokenomics-grid">
@@ -1436,12 +1458,13 @@ footer{
       </div>
       <div class="tokenomics-card reveal">
         <h3>Revenue Split</h3>
-        <p>Net platform fees are split evenly so one side strengthens operations and the other side keeps feeding the burn side of the ecosystem.</p>
+        <p>Net platform profit is routed with a fixed split so operations stay strong, burns stay visible, and holder rewards keep building over time.</p>
         <ul class="tokenomics-lines">
           <li><span>Treasury</span><span>50%</span></li>
-          <li><span>Back into charts</span><span>50%</span></li>
+          <li><span>Buyback + Burn</span><span>25%</span></li>
+          <li><span>SOL Rewards Vault</span><span>25%</span></li>
           <li><span>Treasury use</span><span>Infra, support, growth</span></li>
-          <li><span>Chart support use</span><span>Burn wallet / buyback flow</span></li>
+          <li><span>Rewards use</span><span>SOL claims for loyal holders</span></li>
         </ul>
       </div>
       <div class="tokenomics-card reveal">
@@ -1458,7 +1481,7 @@ footer{
     <div class="tokenomics-banner reveal">
       <div>
         <h3>Live Burn Tracker</h3>
-        <p>The floating burn widget reads the live token supply from chain and compares it against an original 1 billion supply. That gives visitors a clean estimate of how much supply has been removed and how much is still left.</p>
+        <p>The floating burn widget reads the live token supply from chain and gives visitors a clean view of how much supply has been burned, how much remains, and how the burn progresses over time.</p>
       </div>
       <a class="btn btn-primary" href="tokenomics.html">Open Full Tokenomics Page &rarr;</a>
     </div>
@@ -1493,7 +1516,7 @@ footer{
           <li>Engagement Services</li>
           <li>Subscriptions Marketplace</li>
         </ul>
-        <span class="rm-status">✓ Live Now</span>
+        <span class="rm-status">? Live Now</span>
       </div>
       <div class="rm-card phase2 reveal">
         <div class="rm-phase">Phase 2</div>
@@ -1509,7 +1532,7 @@ footer{
           <li>Stealth routing enhancements</li>
           <li>Major platform-wide implementation update</li>
         </ul>
-        <span class="rm-status">⚡ In Progress</span>
+        <span class="rm-status">? In Progress</span>
       </div>
       <div class="rm-card phase3 reveal">
         <div class="rm-phase">Phase 3</div>
@@ -1524,9 +1547,10 @@ footer{
           <li>Custom tool builds for projects</li>
           <li>Exchange expansion plans</li>
           <li>Launchpad rollout</li>
+          <li>Integrated launchpad communities</li>
           <li>Cold-wallet partnership integration</li>
         </ul>
-        <span class="rm-status">🔮 Coming Soon</span>
+        <span class="rm-status">Coming Soon</span>
       </div>
     </div>
   </div>
@@ -1541,12 +1565,13 @@ footer{
       </div>
       <div class="deep-content">
         <span class="tag">Launchpad Teaser</span>
-        <h2>What’s Coming Next</h2>
-        <p>We are building toward a much bigger launch surface than the usual static meme-token page. Think live launches, creator context, trader context, richer discovery, stronger trust surfaces, and post-migration trading that stays inside the same product.</p>
-        <p>The goal is simple: a launchpad that feels alive during launch, stronger after migration, and far more useful than a page that dies the second the token goes live.</p>
+        <h2>What's Coming Next</h2>
+        <p>We are building toward a much bigger launch surface than the usual static meme-token page. Think live launches, creator context, trader context, richer discovery, stronger trust surfaces, post-migration trading that stays inside the same product, and integrated communities as part of the launch experience.</p>
+        <p>The goal is simple: a launchpad that feels alive during launch, stronger after migration, and far more useful than a page that dies the second the token goes live. We also plan to bring back an on-platform community layer inspired by what X removed, built directly into the token experience.</p>
         <div class="deep-pills">
           <span class="pill">Integrated live rooms</span>
           <span class="pill">Community on token pages</span>
+          <span class="pill">Integrated communities</span>
           <span class="pill">Trenches-style discovery</span>
           <span class="pill">Creator and trader context</span>
           <span class="pill">Same-page post-grad trading</span>
@@ -1572,25 +1597,25 @@ footer{
     </div>
     <div class="community-cards">
       <div class="comm-card reveal">
-        <div class="comm-icon">🤖</div>
+        <div class="comm-icon">BOT</div>
         <h3>Telegram Bot</h3>
         <p>Access every tool, configure trades, and run automations &mdash; all from one bot.</p>
         <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank" style="width:100%;justify-content:center;">Open Bot</a>
       </div>
       <div class="comm-card reveal">
-        <div class="comm-icon">💬</div>
+        <div class="comm-icon">TG</div>
         <h3>Community Group</h3>
         <p>Join the main group to connect with other users, share ideas, and get support.</p>
-        <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank" style="width:100%;justify-content:center;">Join Community</a>
+      <a class="btn btn-green" href="https://t.me/wizardtoolz" target="_blank" style="width:100%;justify-content:center;">Join Community</a>
       </div>
       <div class="comm-card reveal">
-        <div class="comm-icon">𝕏</div>
+        <div class="comm-icon">X</div>
         <h3>Official X</h3>
         <p>Follow the official X account for updates, launchpad teasers, announcements, and major feature drops.</p>
         <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank" style="width:100%;justify-content:center;">Follow @wizardtoolz</a>
       </div>
       <div class="comm-card reveal">
-        <div class="comm-icon">🔔</div>
+        <div class="comm-icon">AL</div>
         <h3>Alerts Channel</h3>
         <p>Get notified of new tools, updates, and important announcements as they happen.</p>
         <a class="btn btn-outline" href="https://t.me/wizardtoolz_alerts" target="_blank" style="width:100%;justify-content:center;">Join Alerts</a>
@@ -1630,11 +1655,19 @@ footer{
         <div class="faq-a">For trading tools (volume, sniper, bundle, launch), the bot will show you a wallet address to fund with SOL. You send the funds, and the bot handles everything from there. Your funds stay under the control of the process you configured.</div>
       </div>
       <div class="faq-item reveal">
-        <button class="faq-q">What fees do you charge? <span class="faq-arrow">+</span></button>
-        <div class="faq-a">Our handled trading routes use a 0.5% fee. That's typically half of what most competing Telegram trading bots charge. Some stealth-mode features include a small additional routing cost. Half of every platform fee we take goes back into on-chart support through the burn-side flow. Volume trials are free. Specific pricing for growth and social services is available on request through support.</div>
+        <button class="faq-q">How do staking rewards grow over time? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Rewards build continuously as long as your linked WIZARD TOOLZ wallet keeps holding. Right now the weight curve is designed so the first 7 days count lightly, then longer holds receive stronger weight. The current live tiers are 0-6 days at 0.25x, 7-29 days at 1.0x, 30-89 days at 1.25x, 90-179 days at 1.5x, and 180+ days at 2.0x.</div>
       </div>
       <div class="faq-item reveal">
-        <button class="faq-q">Why are your fees lower than many competitors? <span class="faq-arrow">+</span></button>
+        <button class="faq-q">How are generated wallets and private keys handled? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Generated private keys are hidden by default in the bot and only shown back inside your own Telegram flow when you choose to reveal them. Treat every generated or imported wallet like a live hot wallet and never share the private key with support.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">What fees do you charge? <span class="faq-arrow">+</span></button>
+        <div class="faq-a">Our handled trading routes use a 0.5% fee. That is lower than every competitor we track. Some stealth-mode features include a small additional routing cost. Net platform profit is routed 50% to treasury, 25% to buyback + burn, and 25% as SOL into the rewards vault for holder rewards. Volume trials are free. Specific pricing for growth and social services is available on request through support.</div>
+      </div>
+      <div class="faq-item reveal">
+        <button class="faq-q">Why are your fees lower than everyone else? <span class="faq-arrow">+</span></button>
         <div class="faq-a">We built this platform for serious Solana users, and we believe fees should reflect value &mdash; not just be as high as the market allows. Many leading Telegram bots charge 1% per handled trade. We charge 0.5%. Over many trades, that difference is significant.</div>
       </div>
       <div class="faq-item reveal">
@@ -1658,20 +1691,20 @@ footer{
     <h2 class="cta-title reveal">The Spells Are Cast.<br>You Just Have to <span>Open the Bot.</span></h2>
     <p class="cta-sub reveal">Join the ecosystem early, use the tools now, and watch the bigger launchpad vision take shape. Wizard Toolz is building far beyond a standard Telegram bot.</p>
     <div class="cta-btns reveal">
-      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank" style="font-size:15px;padding:16px 32px;">✦ Open Telegram Bot</a>
-      <a class="btn btn-green" href="https://t.me/wizard_toolz" target="_blank" style="font-size:15px;padding:16px 32px;">Join Community</a>
-      <a class="btn btn-outline" href="https://t.me/wizardtoolz_alerts" target="_blank" style="font-size:15px;padding:16px 32px;">🔔 Join Alerts</a>
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank" style="font-size:15px;padding:16px 32px;">Open Telegram Bot</a>
+      <a class="btn btn-green" href="https://t.me/wizardtoolz" target="_blank" style="font-size:15px;padding:16px 32px;">Join Community</a>
+      <a class="btn btn-outline" href="https://t.me/wizardtoolz_alerts" target="_blank" style="font-size:15px;padding:16px 32px;">Join Alerts</a>
       <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank" style="font-size:15px;padding:16px 32px;">Contact Support</a>
     </div>
     <div class="cta-links reveal">
       <span>Token: <span style="font-family:'DM Mono',monospace;font-size:12px;">Launching Soon</span></span>
-      <span>•</span>
-      <a href="https://t.me/wizard_toolz">t.me/wizard_toolz</a>
-      <span>•</span>
+      <span>&bull;</span>
+      <a href="https://t.me/wizardtoolz">t.me/wizardtoolz</a>
+      <span>&bull;</span>
       <a href="https://x.com/wizardtoolz">x.com/wizardtoolz</a>
-      <span>•</span>
+      <span>&bull;</span>
       <a href="https://t.me/wizardtoolz_alerts">t.me/wizardtoolz_alerts</a>
-      <span>•</span>
+      <span>&bull;</span>
       <a href="https://t.me/wizard_toolz">DM for Custom Tools</a>
     </div>
   </div>
@@ -1685,7 +1718,7 @@ footer{
       Wizard Toolz
     </div>
     <div class="footer-links">
-      <a href="https://t.me/wizard_toolz">Telegram</a>
+      <a href="https://t.me/wizardtoolz">Telegram</a>
       <a href="https://x.com/wizardtoolz">X</a>
       <a href="https://t.me/wizardtoolz_alerts">Alerts</a>
       <a href="https://t.me/wizardtoolzbot">Bot</a>
@@ -1694,7 +1727,7 @@ footer{
       <a href="security.html">Security</a>
       <a href="https://t.me/wizard_toolz">Contact</a>
     </div>
-    <div class="footer-copy">© 2026 WIZARD TOOLZ</div>
+    <div class="footer-copy">&copy; 2026 WIZARD TOOLZ</div>
   </div>
 </footer>
 
@@ -1716,7 +1749,7 @@ footer{
     </div>
     <div class="burn-widget-progress"><span id="burnProgress"></span></div>
     <div class="burn-widget-meta">
-      <span>Progress from original 1,000,000,000 supply: <strong id="burnPercent" style="color:var(--white);">--</strong></span>
+      <span>Burn progress: <strong id="burnPercent" style="color:var(--white);">--</strong></span>
       <span>Token Mint: <code id="burnMint">[INSERT TOKEN MINT]</code></span>
       <span>Last updated: <strong id="burnUpdated" style="color:var(--white);">Waiting for config</strong></span>
     </div>
@@ -1724,7 +1757,7 @@ footer{
       <a class="btn btn-outline" href="tokenomics.html">Tokenomics</a>
       <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot</a>
     </div>
-    <p class="burn-widget-note">The widget compares live on-chain supply against an original 1B supply. Add the real mint address to activate it.</p>
+    <p class="burn-widget-note">The widget reads the live token supply and estimates the amount burned. Add the real mint address to activate it.</p>
   </div>
 </aside>
 
@@ -1755,7 +1788,7 @@ footer{
       <p>Questions, custom tools, pricing, or setup help &mdash; message us directly on Telegram and we&apos;ll point you the right way.</p>
       <div class="chat-panel-actions">
         <a class="btn btn-primary" href="https://t.me/wizard_toolz" target="_blank">Message @wizard_toolz</a>
-        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Open Community Group</a>
+        <a class="btn btn-outline" href="https://t.me/wizardtoolz" target="_blank">Open Community Group</a>
         <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Open X</a>
       </div>
     </div>
@@ -1773,6 +1806,19 @@ const WIZARD_TOKENOMICS = {
     'https://api.mainnet-beta.solana.com'
   ]
 };
+
+function resolvePumpCoinUrl(mintAddress) {
+  const mint = String(mintAddress || '').trim();
+  if (!mint || mint.includes('[INSERT')) return 'https://pump.fun/create';
+  return `https://pump.fun/coin/${mint}`;
+}
+
+function hydratePumpLinks(mintAddress) {
+  const href = resolvePumpCoinUrl(mintAddress);
+  document.querySelectorAll('[data-pump-link]').forEach((node) => {
+    node.href = href;
+  });
+}
 
 function formatTokenAmount(value) {
   if (!Number.isFinite(value)) return '--';
@@ -1831,6 +1877,7 @@ async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
 
 async function refreshBurnWidget() {
   const mintAddress = WIZARD_TOKENOMICS.mintAddress;
+  hydratePumpLinks(mintAddress);
   if (!isConfiguredMint(mintAddress)) {
     setBurnWidgetState({ error: 'Add your real token mint', mint: mintAddress });
     return;
@@ -1863,6 +1910,8 @@ async function refreshBurnWidget() {
     mint: mintAddress
   });
 }
+
+hydratePumpLinks(WIZARD_TOKENOMICS.mintAddress);
 
 // Scroll reveal
 const reveals = document.querySelectorAll('.reveal');
@@ -1918,3 +1967,7 @@ setInterval(refreshBurnWidget, 60000);
 </script>
 </body>
 </html>
+
+
+
+

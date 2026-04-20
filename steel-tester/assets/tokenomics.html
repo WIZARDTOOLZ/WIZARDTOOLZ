@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>WIZARD TOOLZ | Tokenomics</title>
+<title>WIZARD TOOLZ</title>
 <meta name="theme-color" content="#050507">
 <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 <link rel="apple-touch-icon" href="favicon-512.png">
@@ -37,10 +37,14 @@ a{text-decoration:none;color:inherit}
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
   border-radius:999px;padding:13px 24px;font-size:14px;font-weight:600;
   transition:.2s ease;
+  border:1px solid rgba(255,255,255,0.14);
 }
-.btn-primary{background:var(--gold);color:#000}
-.btn-outline{border:1px solid var(--border);background:rgba(255,255,255,0.03)}
+.btn-primary{background:#f2f2f4;color:#050507}
+.btn-outline{border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.04);color:var(--text)}
 .btn:hover{transform:translateY(-1px)}
+.btn-primary:hover{background:#ffffff;box-shadow:0 10px 30px rgba(255,255,255,0.12)}
+.btn-outline:hover{border-color:rgba(255,255,255,0.34);background:rgba(255,255,255,0.09);color:#ffffff}
+.pump-logo{width:16px;height:16px;display:block;flex:0 0 16px}
 .tag{
   display:inline-block;
   padding:5px 12px;
@@ -60,14 +64,21 @@ nav{
 }
 .nav-inner{
   min-height:72px;
-  display:flex;align-items:center;justify-content:space-between;gap:20px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
 }
 .nav-logo{
   display:flex;align-items:center;gap:12px;
   font-family:'Cinzel',serif;font-size:20px;font-weight:700;
+  white-space:nowrap;
+  flex:0 0 auto;
 }
 .nav-logo img{width:40px;height:40px;border-radius:10px;object-fit:contain}
-.nav-actions{display:flex;gap:12px;flex-wrap:wrap}
+.nav-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto}
+@media(max-width:980px){
+  .nav-inner{padding:10px 0;}
+  .nav-logo{font-size:16px;}
+  .nav-actions .btn-outline{display:none;}
+}
 .hero{padding:88px 0 48px}
 .hero-grid{
   display:grid;
@@ -297,6 +308,7 @@ nav{
       <span>Wizard Toolz</span>
     </a>
     <div class="nav-actions">
+      <a class="btn btn-outline" data-pump-link href="https://pump.fun/create" target="_blank" rel="noopener noreferrer"><img class="pump-logo" src="pump-logomark.svg" alt="Pump.fun logo">Buy on Pump</a>
       <a class="btn btn-outline" href="index.html">Main Site</a>
       <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Follow X</a>
       <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Open Bot</a>
@@ -309,7 +321,7 @@ nav{
     <div>
       <span class="tag">Tokenomics</span>
       <h1>Simple Fees. Clear Utility. Real Burn Tracking.</h1>
-      <p>Wizard Toolz is built to keep handled trading cheaper than most Telegram competitors while routing half of every platform fee back into on-chart support through the burn-side flow. Clear fees. Clear utility. Clear value.</p>
+      <p>Wizard Toolz is built to keep handled trading lower than every competitor we track while routing net platform profit into a transparent split: 50% treasury, 25% buyback + burn, and 25% SOL into the rewards vault. Clear fees. Clear utility. Clear value.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:28px;">
         <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank">Launch the Bot</a>
         <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Ask Support</a>
@@ -325,8 +337,8 @@ nav{
 <section class="section">
   <div class="container">
     <span class="tag">Live Burn Widget</span>
-    <h2>Supply Removed From 1B</h2>
-    <p class="section-sub">This page reads the token's live on-chain supply and compares it against an original 1,000,000,000 supply. That gives a simple estimate of how much has been burned and how much remains.</p>
+    <h2>Burn Overview</h2>
+    <p class="section-sub">This page reads the token's live on-chain supply and gives a simple live estimate of how much has been burned and how much remains in circulation.</p>
 
     <div class="metrics">
       <div class="metric">
@@ -356,7 +368,7 @@ nav{
       </div>
       <div class="panel">
         <span class="metric-label">Measurement Method</span>
-        <div style="color:var(--muted)">Current on-chain supply is subtracted from the original 1B supply to estimate total burned.</div>
+        <div style="color:var(--muted)">Current on-chain supply is used to estimate how much token supply has been permanently removed from circulation.</div>
       </div>
     </div>
   </div>
@@ -384,12 +396,13 @@ nav{
 
       <div class="info-card">
         <h3>Where Revenue Goes</h3>
-        <p>Net platform profit is split in half so the platform stays strong while the other half keeps feeding chart support through the burn-side flow.</p>
+        <p>Net platform profit is routed with a fixed split so the platform stays strong, burns stay active, and the SOL rewards vault keeps growing for loyal holders.</p>
         <ul class="lines">
           <li><span>Treasury</span><span>50%</span></li>
-          <li><span>Back into charts</span><span>50%</span></li>
+          <li><span>Buyback + Burn</span><span>25%</span></li>
+          <li><span>SOL Rewards Vault</span><span>25%</span></li>
           <li><span>Treasury use</span><span>Infra, support, growth</span></li>
-          <li><span>Chart support use</span><span>Burn wallet / buyback flow</span></li>
+          <li><span>Rewards use</span><span>SOL claims for loyal holders</span></li>
         </ul>
       </div>
 
@@ -413,8 +426,8 @@ nav{
     <h2>Why This Matters</h2>
     <div class="faq">
       <div class="info-card faq-item">
-        <h4>Why measure burns from 1B?</h4>
-        <p>Because it gives people a dead-simple benchmark. If the token started at 1,000,000,000 supply, then every token permanently removed reduces that number. The remaining supply tells the story at a glance.</p>
+        <h4>How is the burn shown here?</h4>
+        <p>The page reads the live on-chain supply, shows how much supply remains, and estimates how much has been permanently removed. It is meant to give people a clean burn snapshot at a glance.</p>
       </div>
       <div class="info-card faq-item">
         <h4>Why keep fees visible?</h4>
@@ -422,7 +435,11 @@ nav{
       </div>
       <div class="info-card faq-item">
         <h4>Why split revenue between treasury and chart support?</h4>
-        <p>The treasury keeps the platform funded and growing. The other half feeds the burn-side flow so platform revenue keeps creating visible on-chart support instead of disappearing into pure operations.</p>
+        <p>The treasury keeps the platform funded and growing. The burn route keeps removing supply from the market. The rewards vault route keeps building a SOL reward pool for holders without dumping more token emissions into the market.</p>
+      </div>
+      <div class="info-card faq-item">
+        <h4>How do staking multipliers work?</h4>
+        <p>Rewards build continuously, not in one big random drop. The current live weighting is 0-6 days at 0.25x, 7-29 days at 1.0x, 30-89 days at 1.25x, 90-179 days at 1.5x, and 180+ days at 2.0x. Bigger bags help, but longer holds matter too.</p>
       </div>
     </div>
   </div>
@@ -432,7 +449,7 @@ nav{
   <div class="container">
     <span class="tag">What Is Coming</span>
     <h2>Bigger Platform Moves Ahead</h2>
-    <p class="section-sub">Wizard Toolz is expanding beyond the current Telegram stack. Exchange ambitions, major implementation upgrades, and a much bigger launchpad vision are already in motion.</p>
+    <p class="section-sub">Wizard Toolz is expanding beyond the current Telegram stack. Exchange ambitions, major implementation upgrades, integrated communities, staking, and a much bigger launchpad vision are already in motion.</p>
 
     <div class="panel-grid">
       <div class="info-card">
@@ -447,10 +464,11 @@ nav{
 
       <div class="info-card">
         <h3>Launchpad Direction</h3>
-        <p>The launchpad vision is about making launches feel alive, social, and useful before, during, and after migration.</p>
+        <p>The launchpad vision is about making launches feel alive, social, and useful before, during, and after migration, with integrated communities built directly into the experience.</p>
         <ul class="lines">
           <li><span>Integrated live rooms</span><span>Planned</span></li>
           <li><span>Community on token pages</span><span>Planned</span></li>
+          <li><span>Integrated communities</span><span>Planned</span></li>
           <li><span>Trenches-style discovery</span><span>Planned</span></li>
         </ul>
       </div>
@@ -509,7 +527,7 @@ nav{
       <p>Questions about fees, burns, setup, or custom tools? Message us directly on Telegram.</p>
       <div class="chat-panel-actions">
         <a class="btn btn-primary" href="https://t.me/wizard_toolz" target="_blank">Message @wizard_toolz</a>
-        <a class="btn btn-outline" href="https://t.me/wizard_toolz" target="_blank">Open Community Group</a>
+        <a class="btn btn-outline" href="https://t.me/wizardtoolz" target="_blank">Open Community Group</a>
         <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank">Open X</a>
       </div>
     </div>
@@ -524,6 +542,19 @@ const WIZARD_TOKENOMICS = {
     'https://api.mainnet-beta.solana.com'
   ]
 };
+
+function resolvePumpCoinUrl(mintAddress) {
+  const mint = String(mintAddress || '').trim();
+  if (!mint || mint.includes('[INSERT')) return 'https://pump.fun/create';
+  return `https://pump.fun/coin/${mint}`;
+}
+
+function hydratePumpLinks(mintAddress) {
+  const href = resolvePumpCoinUrl(mintAddress);
+  document.querySelectorAll('[data-pump-link]').forEach((node) => {
+    node.href = href;
+  });
+}
 
 function formatTokenAmount(value) {
   if (!Number.isFinite(value)) return '--';
@@ -564,6 +595,7 @@ async function fetchTokenSupplyFromRpc(endpoint, mintAddress) {
 
 async function refreshBurnStats() {
   const mintAddress = WIZARD_TOKENOMICS.mintAddress;
+  hydratePumpLinks(mintAddress);
   if (!isConfiguredMint(mintAddress)) {
     setWidgetState({ error: 'Add your real token mint', mint: mintAddress });
     return;
@@ -591,6 +623,7 @@ async function refreshBurnStats() {
   setWidgetState({ error: 'Supply temporarily unavailable', mint: mintAddress });
 }
 
+hydratePumpLinks(WIZARD_TOKENOMICS.mintAddress);
 refreshBurnStats();
 setInterval(refreshBurnStats, 60000);
 
@@ -610,3 +643,4 @@ if (chatClose && chatPanel) {
 </script>
 </body>
 </html>
+

@@ -1,4 +1,4 @@
-import 'dotenv/config';
+﻿import 'dotenv/config';
 import { Bot, InlineKeyboard, InputFile, InputMediaBuilder } from 'grammy';
 import { generateKeyPairSync } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -67,6 +67,8 @@ const LAUNCH_BUY_MAX_WALLET_COUNT = 20;
 const LAUNCH_BUY_MAGIC_SETUP_FEE_LAMPORTS = Math.floor(0.5 * LAMPORTS_PER_SOL);
 const LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS = Math.floor(0.35 * LAMPORTS_PER_SOL);
 const LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS = Math.floor(0.01 * LAMPORTS_PER_SOL);
+const LAUNCH_BUY_LAUNCH_OVERHEAD_LAMPORTS = Math.floor(0.012 * LAMPORTS_PER_SOL);
+const LAUNCH_BUY_BUYER_RESERVE_LAMPORTS = Math.floor(0.006 * LAMPORTS_PER_SOL);
 const LAUNCH_BUY_ASSETS_DIR = path.join(DATA_DIR, 'launch-assets');
 const MAGIC_SELL_DEFAULT_SELLER_WALLET_COUNT = 12;
 const MAGIC_SELL_MIN_BUY_LAMPORTS = Math.floor(0.1 * LAMPORTS_PER_SOL);
@@ -121,6 +123,10 @@ const VANITY_WALLET_TREASURY_SHARE_LAMPORTS = Math.floor(VANITY_WALLET_SERVICE_F
 const VANITY_WALLET_BURN_SHARE_LAMPORTS = VANITY_WALLET_SERVICE_FEE_LAMPORTS - VANITY_WALLET_TREASURY_SHARE_LAMPORTS;
 const VANITY_WALLET_MAX_PATTERN_LENGTH = 4;
 const VANITY_WALLET_BATCH_SIZE = 1500;
+const STAKING_MIN_CLAIM_LAMPORTS = parseSolToLamports('0.01');
+const STAKING_UNSTAKE_COOLDOWN_DAYS = 7;
+const STAKING_EARLY_WEIGHT_DAYS = 7;
+const STAKING_REWARDS_VAULT_FEE_RESERVE_LAMPORTS = parseSolToLamports('0.001');
 const vanityWalletJobs = new Map();
 
 let paymentPollInFlight = false;
@@ -255,6 +261,10 @@ function formatDurationCompact(totalSeconds) {
   }
 
   return `${Math.max(1, minutes)}m`;
+}
+
+function formatDayCountLabel(days) {
+  return `${days} day${days === 1 ? '' : 's'}`;
 }
 
 function formatBpsPercent(bps) {
@@ -1244,7 +1254,9 @@ function createDefaultLaunchBuy() {
     jitoTipSol: formatSolAmountFromLamports(LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS),
     estimatedSetupFeeLamports: LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS,
     estimatedRoutingFeeLamports: 0,
-    estimatedTotalNeededLamports: LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS + LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS,
+    estimatedTotalNeededLamports: LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS
+      + LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS
+      + LAUNCH_BUY_LAUNCH_OVERHEAD_LAMPORTS,
     fundedReady: false,
     awaitingField: null,
     status: 'setup',
@@ -1661,7 +1673,7 @@ function normalizeSniperWizard(order = {}) {
       ? order.workerWallets
         .filter((wallet) => wallet && typeof wallet === 'object')
         .slice(0, walletCount)
-        .map((wallet) => normalizeLaunchBuyBuyerWalletRecord(wallet))
+        .map((wallet) => normalizeLaunchBuyBuyerWallet(wallet))
       : createLaunchBuyBuyerWallets(walletCount),
     currentLamports: Number.isInteger(order.currentLamports) ? order.currentLamports : 0,
     currentSol: typeof order.currentSol === 'string' ? order.currentSol : '0',
@@ -2049,6 +2061,23 @@ function createSniperTradingWallets(order) {
     : [];
 }
 
+function createMagicBundleTradingWallets(order) {
+  const tokenLabel = order?.tokenName?.trim() || order?.mintAddress?.slice(0, 6) || 'Bundle';
+  return Array.isArray(order?.splitWallets)
+    ? order.splitWallets.map((wallet, index) => buildSourceLinkedTradingWallet({
+      sourceType: 'magic_bundle',
+      sourceId: order.id,
+      label: `${tokenLabel} B${index + 1}`,
+      address: wallet.address,
+      secretKeyB64: wallet.secretKeyB64,
+      secretKeyBase58: wallet.secretKeyBase58,
+      imported: false,
+      currentLamports: Number.isInteger(wallet.currentLamports) ? wallet.currentLamports : 0,
+      currentSol: typeof wallet.currentSol === 'string' ? wallet.currentSol : '0',
+    }))
+    : [];
+}
+
 function syncSniperWizardTradingDesk(draft, { selectFirst = false } = {}) {
   const order = normalizeSniperWizard(draft.sniperWizard);
   syncTradingDeskWalletsFromSource(
@@ -2056,6 +2085,17 @@ function syncSniperWizardTradingDesk(draft, { selectFirst = false } = {}) {
     'sniper_wizard',
     order.id,
     createSniperTradingWallets(order),
+    { selectFirst },
+  );
+}
+
+function syncMagicBundleTradingDesk(draft, { selectFirst = false } = {}) {
+  const order = normalizeMagicBundle(draft.magicBundle);
+  syncTradingDeskWalletsFromSource(
+    draft,
+    'magic_bundle',
+    order.id,
+    createMagicBundleTradingWallets(order),
     { selectFirst },
   );
 }
@@ -2336,6 +2376,7 @@ const TELEGRAM_MENU_COMMANDS = [
   { command: 'magic_bundle', description: 'open bundle' },
   { command: 'launch_buy', description: 'open launch + buy' },
   { command: 'sniper_wizard', description: 'open sniper wizard' },
+  { command: 'staking', description: 'open staking' },
   { command: 'vanity_wallet', description: 'open vanity wallet' },
   { command: 'community_vision', description: 'open vision' },
   { command: 'wallet_tracker', description: 'open wallet tracker' },
@@ -2388,6 +2429,29 @@ function createDefaultXFollowersState() {
   };
 }
 
+function createDefaultStakingState() {
+  return {
+    walletAddress: null,
+    sourceWalletId: null,
+    status: 'setup',
+    manualClaimOnly: true,
+    rewardsAsset: 'SOL',
+    claimThresholdLamports: STAKING_MIN_CLAIM_LAMPORTS,
+    claimableLamports: 0,
+    totalClaimedLamports: 0,
+    lastClaimedLamports: 0,
+    lastClaimedAt: null,
+    lastClaimSignature: null,
+    totalStakedRaw: '0',
+    totalStakedDisplay: '0',
+    trackingStartedAt: null,
+    lastBalanceSyncedAt: null,
+    lastRewardsAllocatedAt: null,
+    currentWeightLabel: 'Starting',
+    lastError: null,
+  };
+}
+
 function normalizePaymentState(payment = {}) {
   const defaults = createDefaultPaymentState();
   return {
@@ -2428,6 +2492,40 @@ function normalizeXFollowersState(state = {}) {
   };
 }
 
+function normalizeStakingState(state = {}) {
+  const defaults = createDefaultStakingState();
+  return {
+    ...defaults,
+    ...(state ?? {}),
+    walletAddress: typeof state.walletAddress === 'string' ? state.walletAddress : null,
+    sourceWalletId: typeof state.sourceWalletId === 'string' ? state.sourceWalletId : null,
+    status: typeof state.status === 'string' ? state.status : defaults.status,
+    manualClaimOnly: typeof state.manualClaimOnly === 'boolean'
+      ? state.manualClaimOnly
+      : defaults.manualClaimOnly,
+    rewardsAsset: typeof state.rewardsAsset === 'string' ? state.rewardsAsset : defaults.rewardsAsset,
+    claimThresholdLamports: Number.isInteger(state.claimThresholdLamports)
+      ? state.claimThresholdLamports
+      : defaults.claimThresholdLamports,
+    claimableLamports: Number.isInteger(state.claimableLamports) ? state.claimableLamports : 0,
+    totalClaimedLamports: Number.isInteger(state.totalClaimedLamports) ? state.totalClaimedLamports : 0,
+    lastClaimedLamports: Number.isInteger(state.lastClaimedLamports) ? state.lastClaimedLamports : 0,
+    lastClaimedAt: typeof state.lastClaimedAt === 'string' ? state.lastClaimedAt : null,
+    lastClaimSignature: typeof state.lastClaimSignature === 'string' ? state.lastClaimSignature : null,
+    totalStakedRaw: typeof state.totalStakedRaw === 'string' ? state.totalStakedRaw : defaults.totalStakedRaw,
+    totalStakedDisplay: typeof state.totalStakedDisplay === 'string'
+      ? state.totalStakedDisplay
+      : defaults.totalStakedDisplay,
+    trackingStartedAt: typeof state.trackingStartedAt === 'string' ? state.trackingStartedAt : null,
+    lastBalanceSyncedAt: typeof state.lastBalanceSyncedAt === 'string' ? state.lastBalanceSyncedAt : null,
+    lastRewardsAllocatedAt: typeof state.lastRewardsAllocatedAt === 'string' ? state.lastRewardsAllocatedAt : null,
+    currentWeightLabel: typeof state.currentWeightLabel === 'string'
+      ? state.currentWeightLabel
+      : defaults.currentWeightLabel,
+    lastError: typeof state.lastError === 'string' ? state.lastError : null,
+  };
+}
+
 function createDefaultUserState(userId) {
   return {
     telegramId: String(userId),
@@ -2453,6 +2551,7 @@ function createDefaultUserState(userId) {
     activeCommunityVisionId: null,
     walletTrackers: [],
     activeWalletTrackerId: null,
+    staking: createDefaultStakingState(),
     vanityWallet: createDefaultVanityWalletState(),
     resizer: createDefaultResizer(),
     xFollowers: createDefaultXFollowersState(),
@@ -2655,6 +2754,13 @@ function normalizeLaunchBuyBuyerWallet(wallet = {}) {
   };
 }
 
+function estimateLaunchBuyBuyerReserveLamports(buyerWalletCount) {
+  const safeBuyerCount = Number.isInteger(buyerWalletCount)
+    ? Math.max(0, Math.min(LAUNCH_BUY_MAX_WALLET_COUNT, buyerWalletCount))
+    : 0;
+  return safeBuyerCount * LAUNCH_BUY_BUYER_RESERVE_LAMPORTS;
+}
+
 function normalizeLaunchBuy(order = {}) {
   const defaults = createDefaultLaunchBuy();
   const buyerWalletCount = Number.isInteger(order?.buyerWalletCount)
@@ -2679,6 +2785,7 @@ function normalizeLaunchBuy(order = {}) {
   const routingFeeLamports = launchMode === 'magic' && totalBuyLamports
     ? Math.floor(totalBuyLamports * (cfg.magicBundleSplitNowFeeEstimateBps / 10_000))
     : 0;
+  const buyerReserveLamports = estimateLaunchBuyBuyerReserveLamports(buyerWalletCount);
   return {
     ...defaults,
     ...(order ?? {}),
@@ -2708,7 +2815,15 @@ function normalizeLaunchBuy(order = {}) {
     jitoTipSol: formatSolAmountFromLamports(jitoTipLamports),
     estimatedSetupFeeLamports: setupFeeLamports,
     estimatedRoutingFeeLamports: routingFeeLamports,
-    estimatedTotalNeededLamports: Math.max(0, setupFeeLamports + routingFeeLamports + (totalBuyLamports || 0) + jitoTipLamports),
+    estimatedTotalNeededLamports: Math.max(
+      0,
+      setupFeeLamports
+        + routingFeeLamports
+        + (totalBuyLamports || 0)
+        + jitoTipLamports
+        + buyerReserveLamports
+        + LAUNCH_BUY_LAUNCH_OVERHEAD_LAMPORTS,
+    ),
     fundedReady: Boolean(order?.fundedReady),
     awaitingField: typeof order?.awaitingField === 'string' ? order.awaitingField : null,
     status: typeof order?.status === 'string' ? order.status : defaults.status,
@@ -2813,6 +2928,7 @@ function normalizeUserState(userId, user = {}) {
       ?? null);
   const activeWalletTracker = walletTrackers.find((order) => order.id === activeWalletTrackerId)
     ?? createDefaultWalletTracker();
+  const staking = normalizeStakingState(user.staking ?? {});
   const resizer = normalizeResizer(user.resizer ?? {});
   const vanityWallet = normalizeVanityWalletState(user.vanityWallet ?? {});
   const xFollowers = normalizeXFollowersState(user.xFollowers ?? {});
@@ -2852,6 +2968,7 @@ function normalizeUserState(userId, user = {}) {
     walletTrackers,
     activeWalletTrackerId,
     walletTracker: activeWalletTracker,
+    staking,
     vanityWallet,
     resizer,
     xFollowers,
@@ -3600,7 +3717,7 @@ function buttonDisplay(buttonKey) {
 function selectedButtonEmoji(user) {
   return user?.selection?.button && BUTTONS[user.selection.button]
     ? BUTTONS[user.selection.button].emoji
-    : 'Ã¢â€”Å½';
+    : 'ÃƒÂ¢Ã¢â‚¬â€Ã…Â½';
 }
 
 function quoteExpired(payment) {
@@ -3671,24 +3788,24 @@ function isAdminUser(userId) {
 function selectionSnapshot(user) {
   const bundle = getBundlePricing(user.selection.amount);
   const lines = [
-    `Ã°Å¸Å½â€ºÃ¯Â¸Â Profile: ${buttonDisplay(user.selection.button)}`,
-    `Ã°Å¸â€œÂ¦ Bundle: ${amountLabel(user.selection.amount)}`,
-    `Ã°Å¸Å½Â¯ Target: \`${user.selection.target}\``,
+    `ÃƒÂ°Ã…Â¸Ã…Â½Ã¢â‚¬ÂºÃƒÂ¯Ã‚Â¸Ã‚Â Profile: ${buttonDisplay(user.selection.button)}`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Bundle: ${amountLabel(user.selection.amount)}`,
+    `ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Target: \`${user.selection.target}\``,
   ];
 
   if (user.selection.usingFreeTrial) {
-    lines.push(`Ã°Å¸â€™Â¸ Price: Free trial`);
-    lines.push(`Ã°Å¸ÂÂ·Ã¯Â¸Â Access: one-time x${cfg.freeTrialAmount} test`);
+    lines.push(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Price: Free trial`);
+    lines.push(`ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â·ÃƒÂ¯Ã‚Â¸Ã‚Â Access: one-time x${cfg.freeTrialAmount} test`);
   } else if (isAdminUser(user.telegramId)) {
-    lines.push(`Ã°Å¸â€™Â¸ Price: Admin free`);
-    lines.push(`Ã°Å¸ÂÂ·Ã¯Â¸Â Access: unlimited admin launch`);
+    lines.push(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Price: Admin free`);
+    lines.push(`ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â·ÃƒÂ¯Ã‚Â¸Ã‚Â Access: unlimited admin launch`);
   } else if (bundle) {
-    lines.push(`Ã¢â€”Å½ Approx Price: \`${bundleSolDisplay(bundle.amount, user)}\``);
-    lines.push(`Ã°Å¸ÂÂ·Ã¯Â¸Â Tier: ${bundle.role}`);
+    lines.push(`ÃƒÂ¢Ã¢â‚¬â€Ã…Â½ Approx Price: \`${bundleSolDisplay(bundle.amount, user)}\``);
+    lines.push(`ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â·ÃƒÂ¯Ã‚Â¸Ã‚Â Tier: ${bundle.role}`);
   }
 
-  lines.push(`Ã°Å¸â€™Â³ Checkout: ${paymentStatusLabel(user)}`);
-  lines.push(`Ã°Å¸Å¡Â¦ Run State: ${readinessLabel(user)}`);
+  lines.push(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â³ Checkout: ${paymentStatusLabel(user)}`);
+  lines.push(`ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Â¦ Run State: ${readinessLabel(user)}`);
   return lines.join('\n');
 }
 
@@ -3702,19 +3819,19 @@ function paymentDetailsLines(user) {
 
   const payment = user.payment;
   const lines = [
-    `Ã¢â€”Å½ Indicative bundle price: \`${formatApproxSol(payment.usdAmount, payment.solUsdRate)}\``,
-    `Ã¢â€”Å½ Send exactly: \`${payment.solAmount} SOL\``,
-    `Ã°Å¸â€™Â¼ Receive wallet: \`${payment.address}\``,
-    `Ã°Å¸â€¢â€œ Quote created: ${formatTimestamp(payment.quoteCreatedAt)}`,
-    `Ã¢ÂÂ³ Quote expires: ${formatTimestamp(payment.quoteExpiresAt)}`,
+    `ÃƒÂ¢Ã¢â‚¬â€Ã…Â½ Indicative bundle price: \`${formatApproxSol(payment.usdAmount, payment.solUsdRate)}\``,
+    `ÃƒÂ¢Ã¢â‚¬â€Ã…Â½ Send exactly: \`${payment.solAmount} SOL\``,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¼ Receive wallet: \`${payment.address}\``,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬Â¢Ã¢â‚¬Å“ Quote created: ${formatTimestamp(payment.quoteCreatedAt)}`,
+    `ÃƒÂ¢Ã‚ÂÃ‚Â³ Quote expires: ${formatTimestamp(payment.quoteExpiresAt)}`,
   ];
 
   if (payment.matchedSignature) {
-    lines.push(`Ã¢Å“â€¦ Matched tx: \`${payment.matchedSignature}\``);
+    lines.push(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Matched tx: \`${payment.matchedSignature}\``);
   }
 
   if (payment.lastError) {
-    lines.push(`Ã¢Å¡Â Ã¯Â¸Â Last error: \`${payment.lastError}\``);
+    lines.push(`ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Last error: \`${payment.lastError}\``);
   }
 
   return lines;
@@ -3722,30 +3839,30 @@ function paymentDetailsLines(user) {
 
 function makeHomeKeyboard(user) {
   return new InlineKeyboard()
-    .text('Ã°Å¸Å¡â‚¬ Reaction Booster', 'entry:reaction')
-    .text('Ã°Å¸ÂÅ½ Apple Booster', 'nav:volume')
+    .text('ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Reaction Booster', 'entry:reaction')
+    .text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ…Â½ Apple Booster', 'nav:volume')
     .row()
-    .text('Ã°Å¸Â¤â€“ Burn Agent', 'nav:burn_agent')
-    .text('Ã°Å¸â€˜Â¥ Holder Booster', 'nav:holder_booster')
+    .text('ÃƒÂ°Ã…Â¸Ã‚Â¤Ã¢â‚¬â€œ Burn Agent', 'nav:burn_agent')
+    .text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¥ Holder Booster', 'nav:holder_booster')
     .row()
-    .text('Ã¢Å“Â¨ Magic Sell', 'nav:magic_sell')
+    .text('ÃƒÂ¢Ã…â€œÃ‚Â¨ Magic Sell', 'nav:magic_sell')
     .row()
-    .text('Ã°Å¸â€œÅ  Status', 'nav:status')
-    .text('Ã¢â€žÂ¹Ã¯Â¸Â Info', 'nav:help')
+    .text('ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Status', 'nav:status')
+    .text('ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Info', 'nav:help')
     .row()
-    .url('Ã°Å¸â€ºÅ¸ Help', `https://t.me/${SUPPORT_USERNAME}`)
-    .text('Ã°Å¸â€â€ž Refresh', 'refresh:home');
+    .url('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ…Â¸ Help', `https://t.me/${SUPPORT_USERNAME}`)
+    .text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:home');
 }
 
 function makeButtonKeyboard(selectedButton, user) {
   const keyboard = new InlineKeyboard();
   for (const button of Object.values(BUTTONS)) {
-    const label = selectedButton === button.key ? `Ã¢Å“â€¦ ${button.emoji} ${button.label}` : `${button.emoji} ${button.label}`;
+    const label = selectedButton === button.key ? `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ${button.emoji} ${button.label}` : `${button.emoji} ${button.label}`;
     keyboard.text(label, `button:${button.key}`);
   }
-  keyboard.row().text('Ã¢Â¬â€¦Ã¯Â¸Â Back', startBackRoute(user));
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:start');
+  keyboard.row().text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', startBackRoute(user));
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:start');
   return keyboard;
 }
 
@@ -3755,7 +3872,7 @@ function makeAmountKeyboard(selectedAmount, freeTrialUsed, usingFreeTrial, user)
 
   if (!freeTrialUsed || usingFreeTrial) {
     keyboard.text(
-      usingFreeTrial ? `Ã¢Å“â€¦ ${reactionEmoji} Trial x${cfg.freeTrialAmount}` : `${reactionEmoji} Trial x${cfg.freeTrialAmount}`,
+      usingFreeTrial ? `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ${reactionEmoji} Trial x${cfg.freeTrialAmount}` : `${reactionEmoji} Trial x${cfg.freeTrialAmount}`,
       `amount:${cfg.freeTrialAmount}:trial`,
     );
     keyboard.row();
@@ -3763,8 +3880,8 @@ function makeAmountKeyboard(selectedAmount, freeTrialUsed, usingFreeTrial, user)
 
   cfg.packageAmounts.forEach((amount, index) => {
     const label = selectedAmount === amount
-      ? `Ã¢Å“â€¦ ${reactionEmoji} ${amount} Ã¢â‚¬Â¢ ${bundleSolDisplay(amount, user)}`
-      : `${reactionEmoji} ${amount} Ã¢â‚¬Â¢ ${bundleSolDisplay(amount, user)}`;
+      ? `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ${reactionEmoji} ${amount} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${bundleSolDisplay(amount, user)}`
+      : `${reactionEmoji} ${amount} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${bundleSolDisplay(amount, user)}`;
 
     keyboard.text(label, `amount:${amount}:paid`);
     if ((index + 1) % 2 === 0) {
@@ -3772,9 +3889,9 @@ function makeAmountKeyboard(selectedAmount, freeTrialUsed, usingFreeTrial, user)
     }
   });
 
-  keyboard.row().text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:start');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:amount');
+  keyboard.row().text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:start');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:amount');
   return keyboard;
 }
 
@@ -3783,18 +3900,18 @@ function makePaymentKeyboard(user) {
 
   if (user.selection.amount) {
     if (!hasLaunchAccess(user) && cfg.solanaReceiveAddress && !user.selection.usingFreeTrial) {
-      keyboard.text('Ã°Å¸Â§Â¾ Check Payment', 'payment:check');
-      keyboard.text('Ã°Å¸â€Â New Quote', 'payment:refresh');
+      keyboard.text('ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â¾ Check Payment', 'payment:check');
+      keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â New Quote', 'payment:refresh');
       keyboard.row();
     }
   }
 
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:amount');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:amount');
   if (user.selection.button && user.selection.amount) {
-    keyboard.text('Ã°Å¸Å½Â¯ Change Link', 'nav:target');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Change Link', 'nav:target');
   }
-  keyboard.row().text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.text('Ã°Å¸â€â€ž Refresh', 'refresh:payment');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:payment');
   return keyboard;
 }
 
@@ -3803,58 +3920,58 @@ function makeConfirmKeyboard(user) {
   const keyboard = new InlineKeyboard();
 
   if (hasLaunchAccess(user) && ready) {
-    keyboard.text('Ã°Å¸Å¡â‚¬ Launch Reactions', 'run:confirm');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Launch Reactions', 'run:confirm');
     keyboard.row();
   } else if (ready) {
     keyboard.text(
       isAdminUser(user.telegramId)
-        ? 'Ã°Å¸â€˜â€˜ Admin Ready'
+        ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ¢â‚¬Ëœ Admin Ready'
         : user.selection.usingFreeTrial
-          ? 'Ã°Å¸Å½Â Trial Ready'
-          : 'Ã¢â€”Å½ Payment',
+          ? 'ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â Trial Ready'
+          : 'ÃƒÂ¢Ã¢â‚¬â€Ã…Â½ Payment',
       'nav:payment',
     );
     keyboard.row();
   }
 
-  keyboard.text('Ã°Å¸Å¡â‚¬ Change Reaction', 'nav:start');
-  keyboard.row().text('Ã°Å¸â€œÂ¦ Change Amount', 'nav:amount');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Change Reaction', 'nav:start');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Change Amount', 'nav:amount');
   if (user.selection.button && user.selection.amount) {
-    keyboard.text('Ã°Å¸Å½Â¯ Change Link', 'nav:target');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Change Link', 'nav:target');
     keyboard.row();
   }
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:payment');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:confirm');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:payment');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:confirm');
 
   return keyboard;
 }
 
 function makeInfoKeyboard(backTarget = 'nav:home', refreshRoute = 'home') {
   return new InlineKeyboard()
-    .text('Ã¢Â¬â€¦Ã¯Â¸Â Back', backTarget)
-    .text('Ã°Å¸ÂÂ  Home', 'nav:home')
+    .text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', backTarget)
+    .text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home')
     .row()
-    .text('Ã°Å¸â€â€ž Refresh', `refresh:${refreshRoute}`);
+    .text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', `refresh:${refreshRoute}`);
 }
 
 function makeVolumeKeyboardLegacyOriginal(selectedMode) {
   const organicLabel = selectedMode === 'organic'
-    ? 'Ã¢Å“â€¦ Ã°Å¸Å’Â¿ Organic Apple Booster'
-    : 'Ã°Å¸Å’Â¿ Organic Apple Booster';
+    ? 'ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â¿ Organic Apple Booster'
+    : 'ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â¿ Organic Apple Booster';
   const bundledLabel = selectedMode === 'bundled'
-    ? 'Ã¢Å“â€¦ Ã°Å¸â€œÂ¦ Bundled Apple Booster'
-    : 'Ã°Å¸â€œÂ¦ Bundled Apple Booster';
+    ? 'ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Bundled Apple Booster'
+    : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Bundled Apple Booster';
 
   return new InlineKeyboard()
     .text(organicLabel, 'volume:organic')
     .row()
     .text(bundledLabel, 'volume:bundled')
     .row()
-    .text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:home')
-    .text('Ã°Å¸ÂÂ  Home', 'nav:home')
+    .text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:home')
+    .text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home')
     .row()
-    .text('Ã°Å¸â€â€ž Refresh', 'refresh:volume');
+    .text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:volume');
 }
 
 function makeOrganicVolumeKeyboardLegacy(selectedPackageKey) {
@@ -3862,7 +3979,7 @@ function makeOrganicVolumeKeyboardLegacy(selectedPackageKey) {
 
   ORGANIC_VOLUME_PACKAGES.forEach((pkg, index) => {
     const label = selectedPackageKey === pkg.key
-      ? `Ã¢Å“â€¦ ${pkg.emoji} ${pkg.label} - ${pkg.priceSol} SOL`
+      ? `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ${pkg.emoji} ${pkg.label} - ${pkg.priceSol} SOL`
       : `${pkg.emoji} ${pkg.label} - ${pkg.priceSol} SOL`;
 
     keyboard.text(label, `organic:${pkg.key}`);
@@ -3872,9 +3989,9 @@ function makeOrganicVolumeKeyboardLegacy(selectedPackageKey) {
   });
 
   keyboard.row()
-    .text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:home')
-    .text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:volume_organic');
+    .text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:home')
+    .text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:volume_organic');
   return keyboard;
 }
 
@@ -3939,7 +4056,7 @@ function makeBundledVolumeKeyboardLegacyOriginal(user) {
 
   BUNDLED_VOLUME_PACKAGES.forEach((pkg, index) => {
     const label = selectedPackageKey === pkg.key && user.organicVolumeOrder?.strategy === 'bundled'
-      ? `Ã¢Å“â€¦ ${pkg.emoji} New ${pkg.label} Bundle`
+      ? `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ${pkg.emoji} New ${pkg.label} Bundle`
       : `${pkg.emoji} New ${pkg.label} Bundle`;
 
     keyboard.text(label, `bundled:${pkg.key}`);
@@ -3972,32 +4089,32 @@ function makeOrganicVolumeOrderKeyboardLegacyOld(user) {
   const keyboard = new InlineKeyboard();
   const order = user.organicVolumeOrder;
 
-  keyboard.text('Ã°Å¸â€â€ž Refresh Balance', 'organic:refresh');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh Balance', 'organic:refresh');
   keyboard.row();
 
   if (user.organicVolumeOrder.funded) {
-    keyboard.text(user.organicVolumeOrder.running ? 'Ã¢ÂÂ¹Ã¯Â¸Â Stop' : 'Ã¢â€“Â¶Ã¯Â¸Â Start', user.organicVolumeOrder.running ? 'organic:stop' : 'organic:start');
-    keyboard.text('Ã°Å¸â€™Â¸ Withdraw Remaining', 'organic:withdraw');
+    keyboard.text(user.organicVolumeOrder.running ? 'ÃƒÂ¢Ã‚ÂÃ‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Stop' : 'ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¶ÃƒÂ¯Ã‚Â¸Ã‚Â Start', user.organicVolumeOrder.running ? 'organic:stop' : 'organic:start');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Withdraw Remaining', 'organic:withdraw');
     keyboard.row();
   } else {
-    keyboard.text('Ã°Å¸â€â€™ Ã¢â€“Â¶Ã¯Â¸Â Start', 'organic:locked:start');
-    keyboard.text('Ã°Å¸â€â€™ Ã¢ÂÂ¹Ã¯Â¸Â Stop', 'organic:locked:stop');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¶ÃƒÂ¯Ã‚Â¸Ã‚Â Start', 'organic:locked:start');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ ÃƒÂ¢Ã‚ÂÃ‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Stop', 'organic:locked:stop');
     keyboard.row();
-    keyboard.text('Ã°Å¸â€â€™ Ã°Å¸â€™Â¸ Withdraw Remaining', 'organic:locked:withdraw');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Withdraw Remaining', 'organic:locked:withdraw');
     keyboard.row();
   }
 
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:volume');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:volume');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
   return keyboard;
 }
 
 function makeResultKeyboard() {
   return new InlineKeyboard()
-    .text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:payment')
-    .text('Ã°Å¸ÂÂ  Home', 'nav:home')
+    .text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:payment')
+    .text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home')
     .row()
-    .text('Ã°Å¸â€â€ž Refresh', 'refresh:payment');
+    .text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:payment');
 }
 
 function burnAgentListLabel(agent) {
@@ -4006,7 +4123,7 @@ function burnAgentListLabel(agent) {
   const speed = agent.speed === 'lightning' ? 'Fast' : (agent.speed === 'normal' ? 'Normal' : 'Agent');
   const tokenLabel = agent.tokenName?.trim()
     || (agent.mintAddress ? `${agent.mintAddress.slice(0, 4)}...${agent.mintAddress.slice(-4)}` : 'Complete Setup');
-  return `${speed} Ã¢â‚¬Â¢ ${mint} Ã¢â‚¬Â¢ ${status}${archivedTag}`;
+  return `${speed} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${mint} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${status}${archivedTag}`;
 }
 
 function burnAgentCatalogDisplayLabel(agent) {
@@ -4022,9 +4139,9 @@ function makeBurnAgentCatalogKeyboardLegacy(user) {
   const keyboard = new InlineKeyboard();
   const activeAgents = getVisibleBurnAgents(user, { archived: false });
 
-  keyboard.text('Ã¢Å¡Â¡ New Lightning Fast', 'burn:new:lightning');
+  keyboard.text('ÃƒÂ¢Ã…Â¡Ã‚Â¡ New Lightning Fast', 'burn:new:lightning');
   keyboard.row();
-  keyboard.text('Ã°Å¸ÂÂ¢ New Normal', 'burn:new:normal');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¢ New Normal', 'burn:new:normal');
   keyboard.row();
 
   for (const agent of activeAgents) {
@@ -4033,12 +4150,12 @@ function makeBurnAgentCatalogKeyboardLegacy(user) {
   }
 
   if (getVisibleBurnAgents(user, { archived: true }).length > 0) {
-    keyboard.text('Ã°Å¸â€”â€žÃ¯Â¸Â Archive', 'nav:burn_agent_archive');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Å¾ÃƒÂ¯Ã‚Â¸Ã‚Â Archive', 'nav:burn_agent_archive');
     keyboard.row();
   }
 
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:burn_agent');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:burn_agent');
   return keyboard;
 }
 
@@ -4051,9 +4168,9 @@ function makeBurnAgentArchiveKeyboardLegacy(user) {
     keyboard.row();
   }
 
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:burn_agent');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:burn_agent_archive');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:burn_agent');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:burn_agent_archive');
   return keyboard;
 }
 
@@ -4101,28 +4218,28 @@ function makeBurnAgentEditorKeyboardLegacy(user) {
   const agent = user.burnAgent;
 
   if (isArchivedBurnAgent(agent)) {
-    keyboard.text('Ã¢â„¢Â»Ã¯Â¸Â Restore Agent', `burn:restore:${agent.id}`);
+    keyboard.text('ÃƒÂ¢Ã¢â€žÂ¢Ã‚Â»ÃƒÂ¯Ã‚Â¸Ã‚Â Restore Agent', `burn:restore:${agent.id}`);
     keyboard.row();
     keyboard.text(
-      agent.deleteConfirmations >= 1 ? 'Ã°Å¸â€”â€˜Ã¯Â¸Â Confirm Permanent Delete' : 'Ã°Å¸â€”â€˜Ã¯Â¸Â Delete Permanently',
+      agent.deleteConfirmations >= 1 ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬ËœÃƒÂ¯Ã‚Â¸Ã‚Â Confirm Permanent Delete' : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬ËœÃƒÂ¯Ã‚Â¸Ã‚Â Delete Permanently',
       `burn:delete:${agent.id}`,
     );
     keyboard.row();
-    keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:burn_agent_archive');
-    keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-    keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:burn_agent_editor');
+    keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:burn_agent_archive');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+    keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:burn_agent_editor');
     return keyboard;
   }
 
   if (burnAgentNeedsWalletChoice(user)) {
-    keyboard.text('Ã°Å¸Â§Âª Generate Wallet', `burn:wallet:generated:${agent.id}`);
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Âª Generate Wallet', `burn:wallet:generated:${agent.id}`);
     keyboard.row();
-    keyboard.text("Ã°Å¸â€Â I'll Provide My Own", `burn:wallet:provided:${agent.id}`);
+    keyboard.text("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â I'll Provide My Own", `burn:wallet:provided:${agent.id}`);
     keyboard.row();
   } else {
     if (!agent.walletSecretKeyB64 || agent.walletMode === 'provided') {
       keyboard.text(
-        agent.walletAddress ? 'Ã°Å¸â€Â Replace Private Key' : 'Ã°Å¸â€Â Add Private Key',
+        agent.walletAddress ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â Replace Private Key' : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â Add Private Key',
         `burn:set:private_key:${agent.id}`,
       );
       keyboard.row();
@@ -4130,8 +4247,8 @@ function makeBurnAgentEditorKeyboardLegacy(user) {
 
     if (agent.walletMode === 'generated' || agent.walletMode === 'managed') {
       const regenLabel = agent.regenerateConfirmations <= 0
-        ? 'Ã°Å¸â€â€ž Regenerate Wallet'
-        : `Ã°Å¸Å¡Â¨ Confirm Regenerate ${agent.regenerateConfirmations}/3`;
+        ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Regenerate Wallet'
+        : `ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Â¨ Confirm Regenerate ${agent.regenerateConfirmations}/3`;
       keyboard.text(regenLabel, `burn:regen:${agent.id}`);
       keyboard.row();
     }
@@ -4146,47 +4263,47 @@ function makeBurnAgentEditorKeyboardLegacy(user) {
 
     keyboard.text(
       burnAgentIsReady(agent)
-        ? (agent.automationEnabled ? 'Ã¢ÂÂ¹Ã¯Â¸Â Stop Burn Bot' : 'Ã¢â€“Â¶Ã¯Â¸Â Start Burn Bot')
-        : 'Ã°Å¸â€â€™ Start Burn Bot',
+        ? (agent.automationEnabled ? 'ÃƒÂ¢Ã‚ÂÃ‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Stop Burn Bot' : 'ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¶ÃƒÂ¯Ã‚Â¸Ã‚Â Start Burn Bot')
+        : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Start Burn Bot',
       burnAgentIsReady(agent)
         ? `burn:toggle:${agent.id}`
         : 'burn:locked:toggle',
     );
     keyboard.text(
-      agent.walletAddress ? 'Ã°Å¸â€™Â¸ Withdraw Funds' : 'Ã°Å¸â€â€™ Withdraw Funds',
+      agent.walletAddress ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Withdraw Funds' : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Withdraw Funds',
       agent.walletAddress ? `burn:withdraw:${agent.id}` : 'burn:locked:withdraw',
     );
     keyboard.row();
 
-    keyboard.text(agent.mintAddress ? 'Ã°Å¸Âªâ„¢ Update Mint' : 'Ã°Å¸Âªâ„¢ Set Mint', `burn:set:mint:${agent.id}`);
+    keyboard.text(agent.mintAddress ? 'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Update Mint' : 'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Set Mint', `burn:set:mint:${agent.id}`);
     keyboard.row();
 
     if (!isNormalBurnAgent(agent)) {
       keyboard.text(
-        agent.treasuryAddress ? 'Ã°Å¸ÂÂ¦ Update Treasury' : 'Ã°Å¸ÂÂ¦ Set Treasury',
+        agent.treasuryAddress ? 'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¦ Update Treasury' : 'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¦ Set Treasury',
         `burn:set:treasury:${agent.id}`,
       );
       keyboard.row();
       keyboard.text(
-        Number.isInteger(agent.burnPercent) ? `Ã°Å¸â€Â¥ Burn ${agent.burnPercent}%` : 'Ã°Å¸â€Â¥ Set Burn %',
+        Number.isInteger(agent.burnPercent) ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥ Burn ${agent.burnPercent}%` : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥ Set Burn %',
         `burn:set:burn_percent:${agent.id}`,
       );
       keyboard.text(
         Number.isInteger(agent.treasuryPercent)
-          ? `Ã°Å¸â€™Â¸ Treasury ${agent.treasuryPercent}%`
-          : 'Ã°Å¸â€™Â¸ Set Treasury %',
+          ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Treasury ${agent.treasuryPercent}%`
+          : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Set Treasury %',
         `burn:set:treasury_percent:${agent.id}`,
       );
       keyboard.row();
     }
 
-    keyboard.text('Ã°Å¸â€”â€žÃ¯Â¸Â Archive Agent', `burn:archive:${agent.id}`);
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Å¾ÃƒÂ¯Ã‚Â¸Ã‚Â Archive Agent', `burn:archive:${agent.id}`);
     keyboard.row();
   }
 
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:burn_agent');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:burn_agent_editor');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:burn_agent');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:burn_agent_editor');
   return keyboard;
 }
 
@@ -4294,32 +4411,32 @@ function makeTargetKeyboard(user) {
     user.selection.amount ||
     (user.selection.target && user.selection.target !== cfg.defaultTarget)
   ) {
-    keyboard.text('Ã¢Å“â€¦ Continue', 'target:continue');
+    keyboard.text('ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Continue', 'target:continue');
     keyboard.row();
   }
 
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', targetBackRoute(user));
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
-  keyboard.row().text('Ã°Å¸â€â€ž Refresh', 'refresh:target');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', targetBackRoute(user));
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
+  keyboard.row().text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:target');
   return keyboard;
 }
 
 function homeText(user) {
   return [
-    '*Welcome to TRENDING TOOLZ!*',
+    '*Welcome to WIZARD TOOLZ!*',
     '',
     'Getting started with trending has never been easier.',
     '',
-    'Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â',
-    'Ã¢Å“Â¨ *How it works :*',
+    'ÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚Â',
+    'ÃƒÂ¢Ã…â€œÃ‚Â¨ *How it works :*',
     '1. Pick your package and the amount of volume you want',
     '2. Choose the button profile and set your target link',
     '3. Confirm payment or use the free trial to unlock the run',
     '4. Launch it and let the bot handle the execution',
     '',
-    'Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â',
-    'Ã°Å¸Å¡â‚¬ Supports: Raydium Ã¢â‚¬Â¢ PumpSwap Ã¢â‚¬Â¢ Meteora Ã¢â‚¬Â¢ Pumpfun Ã¢â‚¬Â¢ Meteora DBC Ã¢â‚¬Â¢ Bags Ã¢â‚¬Â¢ LetsBonk Ã¢â‚¬Â¢ LaunchLab',
-    'Ã°Å¸â€œÅ  Flexible plans starting at 1 SOL Ã¢â‚¬Â¢ Ã°Å¸â€ºÂ¡Ã¯Â¸Â 100% Safe and secure Ã¢â‚¬Â¢ Reliable Execution Ã¢â‚¬Â¢ Ã°Å¸Å½Â Free Trial',
+    'ÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚ÂÃƒÂ¢Ã¢â‚¬ÂÃ‚Â',
+    'ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Supports: Raydium ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ PumpSwap ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Meteora ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Pumpfun ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Meteora DBC ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Bags ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ LetsBonk ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ LaunchLab',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Flexible plans starting at 1 SOL ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â 100% Safe and secure ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Reliable Execution ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â Free Trial',
     '',
     'Ready? Choose below! Need help? Click the help button!',
   ].join('\n');
@@ -4327,7 +4444,7 @@ function homeText(user) {
 
 function startText(user) {
   return [
-    'Ã°Å¸Å¡â‚¬ *Reaction Booster*',
+    'ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ *Reaction Booster*',
     '',
     selectionSnapshot(user),
     '',
@@ -4337,13 +4454,13 @@ function startText(user) {
 
 function volumeText(user) {
   return [
-    'Ã°Å¸ÂÅ½ *Apple Booster*',
+    'ÃƒÂ°Ã…Â¸Ã‚ÂÃ…Â½ *Apple Booster*',
     '',
     'Choose the type of volume flow you want to use.',
     '',
-    'Ã°Å¸Å’Â¿ Organic Apple Booster: a more natural-looking apple path',
-    'Ã°Å¸â€œÂ¦ Bundled Apple Booster: a bundled apple path',
-    ...(user.volumeMode ? ['', `*Selected mode:* ${user.volumeMode === 'organic' ? 'Ã°Å¸Å’Â¿ Organic Apple Booster' : 'Ã°Å¸â€œÂ¦ Bundled Apple Booster'}`] : []),
+    'ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â¿ Organic Apple Booster: a more natural-looking apple path',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Bundled Apple Booster: a bundled apple path',
+    ...(user.volumeMode ? ['', `*Selected mode:* ${user.volumeMode === 'organic' ? 'ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â¿ Organic Apple Booster' : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Bundled Apple Booster'}`] : []),
   ].join('\n');
 }
 
@@ -4352,30 +4469,30 @@ function organicVolumeTextLegacy(user) {
   const activeBoosters = getVisibleAppleBoosters(user, { archived: false });
   const archivedBoosters = getVisibleAppleBoosters(user, { archived: true });
   return [
-    'Ã°Å¸ÂÂ *Apple Booster Manager*',
+    'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â *Apple Booster Manager*',
     '',
     `Active boosters: *${activeBoosters.length}*`,
     `Archived boosters: *${archivedBoosters.length}*`,
     '',
     'Tap a package below to create a brand new Apple Booster.',
     '',
-    'Ã°Å¸â€œÂ¦ *Available Apple Packages* (`Ã¢â€ Â©Ã¯Â¸Â Creator fee back to you`)',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ *Available Apple Packages* (`ÃƒÂ¢Ã¢â‚¬Â Ã‚Â©ÃƒÂ¯Ã‚Â¸Ã‚Â Creator fee back to you`)',
     '',
     ...ORGANIC_VOLUME_PACKAGES.map((pkg) =>
-      `${pkg.emoji} ${pkg.label} - *${pkg.priceSol} SOL* (Ã¢â€ Â©Ã¯Â¸Â ${pkg.rebateSol} SOL)`,
+      `${pkg.emoji} ${pkg.label} - *${pkg.priceSol} SOL* (ÃƒÂ¢Ã¢â‚¬Â Ã‚Â©ÃƒÂ¯Ã‚Â¸Ã‚Â ${pkg.rebateSol} SOL)`,
     ),
     '',
-    'Ã¢Å¡Â¡Ã¯Â¸Â Optimized execution. Better pricing. Built for real chart growth.',
+    'ÃƒÂ¢Ã…Â¡Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Optimized execution. Better pricing. Built for real chart growth.',
     ...(selectedPackage ? ['', `*Selected package:* ${selectedPackage.emoji} ${selectedPackage.label} - ${selectedPackage.priceSol} SOL`] : []),
     '',
-    'Ã°Å¸â€˜â€¡ Tap a button below to choose your apple package.',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ¢â‚¬Â¡ Tap a button below to choose your apple package.',
   ].join('\n');
 }
 
 function organicVolumeArchiveTextLegacy(user) {
   const archivedBoosters = getVisibleAppleBoosters(user, { archived: true });
   return [
-    'Ã°Å¸â€”â€žÃ¯Â¸Â *Apple Booster Archive*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Å¾ÃƒÂ¯Ã‚Â¸Ã‚Â *Apple Booster Archive*',
     '',
     archivedBoosters.length > 0
       ? `Archived boosters: *${archivedBoosters.length}*`
@@ -4425,7 +4542,7 @@ function organicVolumeArchiveText(user) {
 
 function bundledVolumeTextLegacy() {
   return [
-    'Ã°Å¸â€œÂ¦ *Bundled Apple Booster*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ *Bundled Apple Booster*',
     '',
     'This flow is up next.',
     '',
@@ -4437,13 +4554,13 @@ function bundledVolumeTextLegacyOriginal() {
   return [
     '\u{1F4E6} *Bundled Apple Booster*',
     '',
-    'Bundle Volume Packages (`Ã¢â€ Â©Ã¯Â¸Â Creator fee rebates included`)',
+    'Bundle Volume Packages (`ÃƒÂ¢Ã¢â‚¬Â Ã‚Â©ÃƒÂ¯Ã‚Â¸Ã‚Â Creator fee rebates included`)',
     '',
     ...BUNDLED_VOLUME_PACKAGES.map((pkg) =>
-      `${pkg.emoji} ${pkg.label} - *${pkg.priceSol} SOL* (Ã¢â€ Â©Ã¯Â¸Â ${pkg.rebateSol} SOL)`,
+      `${pkg.emoji} ${pkg.label} - *${pkg.priceSol} SOL* (ÃƒÂ¢Ã¢â‚¬Â Ã‚Â©ÃƒÂ¯Ã‚Â¸Ã‚Â ${pkg.rebateSol} SOL)`,
     ),
     '',
-    'Ã¢Å¡Â¡Ã¯Â¸Â Faster execution. Lower cost. Optimized for momentum.',
+    'ÃƒÂ¢Ã…Â¡Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Faster execution. Lower cost. Optimized for momentum.',
     '',
     'Bundled mode submits a same-block buy and sell bundle through Jito.',
   ].join('\n');
@@ -4528,17 +4645,17 @@ function organicVolumeOrderTextLegacy(user) {
   const remainingLamports = Math.max(0, (order.requiredLamports ?? 0) - (order.currentLamports ?? 0));
 
   return [
-    'Ã°Å¸â€™Â¼ *Organic Apple Order*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¼ *Organic Apple Order*',
     '',
-    pkg ? `Ã°Å¸â€œÂ¦ Package: ${pkg.emoji} *${pkg.label}*` : 'Ã°Å¸â€œÂ¦ Package: Not selected',
-    order.requiredSol ? `Ã°Å¸â€™Â° Required deposit: *${order.requiredSol} SOL*` : 'Ã°Å¸â€™Â° Required deposit: Pending',
-    order.rebateSol ? `Ã¢â€ Â©Ã¯Â¸Â Creator fee rebate: *${order.rebateSol} SOL*` : null,
-    order.walletAddress ? `Ã°Å¸ÂÂ¦ Deposit wallet: \`${order.walletAddress}\`` : 'Ã°Å¸ÂÂ¦ Deposit wallet: Not ready',
-    `Ã°Å¸â€™Â³ Current balance: *${order.currentSol || '0'} SOL*`,
-    `Ã°Å¸â€œâ€° Remaining to fund: *${formatSolAmountFromLamports(remainingLamports)} SOL*`,
-    `Ã°Å¸â€œÂ¡ Status: *${order.funded ? (order.running ? 'Running' : 'Funded') : 'Awaiting deposit'}*`,
-    order.lastBalanceCheckAt ? `Ã°Å¸â€¢â€œ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
-    order.lastError ? `Ã¢Å¡Â Ã¯Â¸Â Last error: \`${order.lastError}\`` : null,
+    pkg ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Package: ${pkg.emoji} *${pkg.label}*` : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Package: Not selected',
+    order.requiredSol ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â° Required deposit: *${order.requiredSol} SOL*` : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â° Required deposit: Pending',
+    order.rebateSol ? `ÃƒÂ¢Ã¢â‚¬Â Ã‚Â©ÃƒÂ¯Ã‚Â¸Ã‚Â Creator fee rebate: *${order.rebateSol} SOL*` : null,
+    order.walletAddress ? `ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¦ Deposit wallet: \`${order.walletAddress}\`` : 'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¦ Deposit wallet: Not ready',
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â³ Current balance: *${order.currentSol || '0'} SOL*`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Â° Remaining to fund: *${formatSolAmountFromLamports(remainingLamports)} SOL*`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¡ Status: *${order.funded ? (order.running ? 'Running' : 'Funded') : 'Awaiting deposit'}*`,
+    order.lastBalanceCheckAt ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬Â¢Ã¢â‚¬Å“ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
+    order.lastError ? `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Last error: \`${order.lastError}\`` : null,
     '',
     order.funded
       ? 'Funding confirmed. You can now use Start, Stop, or Withdraw Remaining.'
@@ -4564,44 +4681,44 @@ function makeOrganicVolumeOrderKeyboardLegacy(user) {
     return keyboard;
   }
 
-  keyboard.text('Ã°Å¸â€â€ž Refresh Balance', 'organic:refresh');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh Balance', 'organic:refresh');
   keyboard.row();
   keyboard.text(
     Number.isInteger(order.appleBooster.walletCount)
-      ? `Ã°Å¸â€˜â€º Wallets: ${order.appleBooster.walletCount}`
-      : 'Ã°Å¸â€˜â€º Set Worker Wallet Count',
+      ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ¢â‚¬Âº Wallets: ${order.appleBooster.walletCount}`
+      : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ¢â‚¬Âº Set Worker Wallet Count',
     'organic:set:wallet_count',
   );
   keyboard.row();
-  keyboard.text('Ã°Å¸Âªâ„¢ Set Mint', 'organic:set:mint');
-  keyboard.text('Ã°Å¸â€™Â¸ Set Swap Range', 'organic:set:swap_range');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Set Mint', 'organic:set:mint');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Set Swap Range', 'organic:set:swap_range');
   keyboard.row();
-  keyboard.text('Ã¢ÂÂ±Ã¯Â¸Â Set Interval Range', 'organic:set:interval_range');
+  keyboard.text('ÃƒÂ¢Ã‚ÂÃ‚Â±ÃƒÂ¯Ã‚Â¸Ã‚Â Set Interval Range', 'organic:set:interval_range');
   keyboard.row();
 
   if (order.funded && organicBoosterIsConfigured(order)) {
     keyboard.text(
-      order.appleBooster.stopRequested ? 'Ã¢ÂÂ³ Stopping + Sweeping' : (order.running ? 'Ã¢ÂÂ¹Ã¯Â¸Â Stop + Sweep' : 'Ã¢â€“Â¶Ã¯Â¸Â Start Booster'),
+      order.appleBooster.stopRequested ? 'ÃƒÂ¢Ã‚ÂÃ‚Â³ Stopping + Sweeping' : (order.running ? 'ÃƒÂ¢Ã‚ÂÃ‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Stop + Sweep' : 'ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¶ÃƒÂ¯Ã‚Â¸Ã‚Â Start Booster'),
       order.running ? 'organic:stop' : 'organic:start',
     );
-    keyboard.text('Ã°Å¸â€™Â¼ Withdraw SOL', 'organic:withdraw');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¼ Withdraw SOL', 'organic:withdraw');
     keyboard.row();
   } else if (order.funded) {
-    keyboard.text('Ã°Å¸â€â€™ Start Booster', 'organic:locked:start');
-    keyboard.text('Ã°Å¸â€™Â¼ Withdraw SOL', 'organic:withdraw');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Start Booster', 'organic:locked:start');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¼ Withdraw SOL', 'organic:withdraw');
     keyboard.row();
   } else {
-    keyboard.text('Ã°Å¸â€â€™ Start Booster', 'organic:locked:start');
-    keyboard.text('Ã°Å¸â€â€™ Stop Booster', 'organic:locked:stop');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Start Booster', 'organic:locked:start');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Stop Booster', 'organic:locked:stop');
     keyboard.row();
-    keyboard.text('Ã°Å¸â€â€™ Withdraw SOL', 'organic:locked:withdraw');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Withdraw SOL', 'organic:locked:withdraw');
     keyboard.row();
   }
 
   keyboard.text('Archive Booster', `organic:archive:${order.id}`);
   keyboard.row();
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:volume');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:volume');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
   return keyboard;
 }
 
@@ -4782,125 +4899,125 @@ function organicVolumeOrderTextLegacyCurrent(user) {
     ? Math.min(100, (approximateVolumeUsd / packageTargetUsd) * 100)
     : null;
   const orderStatusLabel = order.archivedAt
-    ? 'Ã¢Å¡Â« Archived'
+    ? 'ÃƒÂ¢Ã…Â¡Ã‚Â« Archived'
     : (order.funded
-      ? (order.running ? 'Ã°Å¸Å¸Â¢ Running' : 'Ã°Å¸Å¸Â¡ Funded')
-      : 'Ã°Å¸Å¸Â  Awaiting Deposit');
+      ? (order.running ? 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¢ Running' : 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¡ Funded')
+      : 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â  Awaiting Deposit');
   const boosterStatusLabel = order.running
     ? (booster.status || 'running')
     : (booster.stopRequested ? 'Stopping + Sweeping' : 'Stopped');
 
   return [
-    isBundled ? 'Ã°Å¸â€œÂ¦ *Bundled Apple Booster*' : 'Ã°Å¸ÂÂ *Organic Apple Booster*',
+    isBundled ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ *Bundled Apple Booster*' : 'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â *Organic Apple Booster*',
     '',
-    'Ã°Å¸â€œÂ¦ *Order*',
-    pkg ? `Ã¢â‚¬Â¢ Package: ${pkg.emoji} *${pkg.label}*` : 'Ã¢â‚¬Â¢ Package: *Not selected*',
-    `Ã¢â‚¬Â¢ Status: *${orderStatusLabel}*`,
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ *Order*',
+    pkg ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Package: ${pkg.emoji} *${pkg.label}*` : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Package: *Not selected*',
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Status: *${orderStatusLabel}*`,
     '',
-    'Ã°Å¸â€™Â³ *Funding*',
-    order.requiredSol ? `Ã¢â‚¬Â¢ Required deposit: *${order.requiredSol} SOL*` : 'Ã¢â‚¬Â¢ Required deposit: *Pending*',
-    order.rebateSol ? `Ã¢â‚¬Â¢ Creator rebate: *${order.rebateSol} SOL*` : null,
-    order.walletAddress ? 'Ã¢â‚¬Â¢ Deposit wallet:' : 'Ã¢â‚¬Â¢ Deposit wallet: *Not ready*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â³ *Funding*',
+    order.requiredSol ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Required deposit: *${order.requiredSol} SOL*` : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Required deposit: *Pending*',
+    order.rebateSol ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Creator rebate: *${order.rebateSol} SOL*` : null,
+    order.walletAddress ? 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Deposit wallet:' : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Deposit wallet: *Not ready*',
     order.walletAddress ? `\`${order.walletAddress}\`` : null,
-    `Ã¢â‚¬Â¢ Deposit balance: *${order.currentSol || '0'} SOL*`,
-    `Ã¢â‚¬Â¢ Managed balance: *${formatSolAmountFromLamports(totalManagedLamports)} SOL*`,
-    `Ã¢â‚¬Â¢ Left to fund: *${formatSolAmountFromLamports(remainingLamports)} SOL*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Deposit balance: *${order.currentSol || '0'} SOL*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Managed balance: *${formatSolAmountFromLamports(totalManagedLamports)} SOL*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Left to fund: *${formatSolAmountFromLamports(remainingLamports)} SOL*`,
     '',
-    'Ã¢Å¡â„¢Ã¯Â¸Â *Booster Setup*',
-    ...(isBundled ? [] : [`Ã¢â‚¬Â¢ Worker wallets: *${booster.walletCount || 'Not set'}*`]),
-    `Ã¢â‚¬Â¢ Mint: ${booster.mintAddress ? `\`${booster.mintAddress}\`` : '*Not set*'}`,
-    `Ã¢â‚¬Â¢ Swap range: *${formatSolRange(booster.minSwapSol, booster.maxSwapSol)}*`,
-    `Ã¢â‚¬Â¢ Interval: *${formatSecondRange(booster.minIntervalSeconds, booster.maxIntervalSeconds)}*`,
-    `Ã¢â‚¬Â¢ Bot status: *${boosterStatusLabel}*`,
-    ...(isBundled ? ['Ã¢â‚¬Â¢ Execution: *Jito bundled same-block buy + sell*'] : []),
+    'ÃƒÂ¢Ã…Â¡Ã¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â *Booster Setup*',
+    ...(isBundled ? [] : [`ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Worker wallets: *${booster.walletCount || 'Not set'}*`]),
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Mint: ${booster.mintAddress ? `\`${booster.mintAddress}\`` : '*Not set*'}`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Swap range: *${formatSolRange(booster.minSwapSol, booster.maxSwapSol)}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Interval: *${formatSecondRange(booster.minIntervalSeconds, booster.maxIntervalSeconds)}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Bot status: *${boosterStatusLabel}*`,
+    ...(isBundled ? ['ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Execution: *Jito bundled same-block buy + sell*'] : []),
     '',
-    'Ã°Å¸Å’Â *Market & Costs*',
-    `Ã¢â‚¬Â¢ Market: *${marketLabel}*`,
-    booster.marketCapSol ? `Ã¢â‚¬Â¢ Market cap: *${booster.marketCapSol} SOL*` : null,
+    'ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â *Market & Costs*',
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Market: *${marketLabel}*`,
+    booster.marketCapSol ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Market cap: *${booster.marketCapSol} SOL*` : null,
     Number.isInteger(totalFeeBps) && totalFeeBps > 0
-      ? `Ã¢â‚¬Â¢ Fee profile: LP ${formatBpsPercent(booster.lpFeeBps)} + protocol ${formatBpsPercent(booster.protocolFeeBps)} + creator ${formatBpsPercent(booster.creatorFeeBps)}`
-      : 'Ã¢â‚¬Â¢ Fee estimate: *Waiting for mint + market data*',
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Fee profile: LP ${formatBpsPercent(booster.lpFeeBps)} + protocol ${formatBpsPercent(booster.protocolFeeBps)} + creator ${formatBpsPercent(booster.creatorFeeBps)}`
+      : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Fee estimate: *Waiting for mint + market data*',
     Number.isInteger(booster.estimatedCycleFeeLamports)
-      ? `Ã¢â‚¬Â¢ Cycle cost: *${formatSolAmountFromLamports(booster.estimatedCycleFeeLamports)} SOL*`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Cycle cost: *${formatSolAmountFromLamports(booster.estimatedCycleFeeLamports)} SOL*`
       : null,
     Number.isInteger(booster.estimatedTradeFeeLamports)
-      ? `Ã¢â‚¬Â¢ Trade fees: *${formatSolAmountFromLamports(booster.estimatedTradeFeeLamports)} SOL*`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Trade fees: *${formatSolAmountFromLamports(booster.estimatedTradeFeeLamports)} SOL*`
       : null,
     Number.isInteger(booster.estimatedNetworkFeeLamports)
-      ? `Ã¢â‚¬Â¢ Network gas: *${formatSolAmountFromLamports(booster.estimatedNetworkFeeLamports)} SOL*`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Network gas: *${formatSolAmountFromLamports(booster.estimatedNetworkFeeLamports)} SOL*`
       : null,
     ...(!isTrial && (Number.isFinite(packageTargetUsd) || Number.isFinite(approximateVolumeUsd))
       ? [
         '',
-        'Ã°Å¸â€œË† *Progress*',
+        'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‹â€  *Progress*',
         Number.isFinite(approximateVolumeProgressPercent)
-          ? `Ã¢â‚¬Â¢ Completion: *${approximateVolumeProgressPercent.toFixed(1).replace(/\.0$/, '')}%* ${formatProgressBar(approximateVolumeProgressPercent)}`
+          ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Completion: *${approximateVolumeProgressPercent.toFixed(1).replace(/\.0$/, '')}%* ${formatProgressBar(approximateVolumeProgressPercent)}`
           : null,
         Number.isFinite(packageTargetUsd)
-          ? `Ã¢â‚¬Â¢ Package target: *${formatUsdCompact(packageTargetUsd)}*`
+          ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Package target: *${formatUsdCompact(packageTargetUsd)}*`
           : null,
         Number.isFinite(approximateVolumeUsd)
-          ? `Ã¢â‚¬Â¢ Volume completed: *${formatUsdCompact(approximateVolumeUsd)}*`
+          ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Volume completed: *${formatUsdCompact(approximateVolumeUsd)}*`
           : null,
         Number.isFinite(approximateVolumeRemainingUsd)
-          ? `Ã¢â‚¬Â¢ Volume left: *${formatUsdCompact(approximateVolumeRemainingUsd)}*`
+          ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Volume left: *${formatUsdCompact(approximateVolumeRemainingUsd)}*`
           : null,
         approximateVolumeLamports > 0
-          ? `Ã¢â‚¬Â¢ SOL throughput: *${formatSolAmountFromLamports(approximateVolumeLamports)} SOL*`
+          ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ SOL throughput: *${formatSolAmountFromLamports(approximateVolumeLamports)} SOL*`
           : null,
       ].filter(Boolean)
       : []),
     '',
-    'Ã¢ÂÂ±Ã¯Â¸Â *Runtime & Stats*',
+    'ÃƒÂ¢Ã‚ÂÃ‚Â±ÃƒÂ¯Ã‚Â¸Ã‚Â *Runtime & Stats*',
     Number.isInteger(runtimeEstimate.cyclesRemaining)
-      ? `Ã¢â‚¬Â¢ Cycles left: *${runtimeEstimate.cyclesRemaining}*`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Cycles left: *${runtimeEstimate.cyclesRemaining}*`
       : null,
     Number.isInteger(runtimeEstimate.runtimeSeconds)
-      ? `Ã¢â‚¬Â¢ Runtime left: *${formatDurationCompact(runtimeEstimate.runtimeSeconds)}*`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Runtime left: *${formatDurationCompact(runtimeEstimate.runtimeSeconds)}*`
       : null,
-    booster.nextActionAt ? `Ã¢â‚¬Â¢ Next action: ${formatTimestamp(booster.nextActionAt)}` : null,
-    `Ã¢â‚¬Â¢ Cycles: buys *${booster.totalBuyCount || 0}*, sells *${booster.totalSellCount || 0}*, completed *${booster.cycleCount || 0}*`,
-    `Ã¢â‚¬Â¢ Wallet flow: topped up *${formatSolAmountFromLamports(booster.totalTopUpLamports || 0)} SOL*, swept *${formatSolAmountFromLamports(booster.totalSweptLamports || 0)} SOL*`,
-    booster.lastBuySignature ? `Ã¢â‚¬Â¢ Last buy tx: \`${booster.lastBuySignature}\`` : null,
-    booster.lastSellSignature ? `Ã¢â‚¬Â¢ Last sell tx: \`${booster.lastSellSignature}\`` : null,
-    booster.lastError ? `Ã¢â‚¬Â¢ Booster error: \`${booster.lastError}\`` : null,
+    booster.nextActionAt ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Next action: ${formatTimestamp(booster.nextActionAt)}` : null,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Cycles: buys *${booster.totalBuyCount || 0}*, sells *${booster.totalSellCount || 0}*, completed *${booster.cycleCount || 0}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Wallet flow: topped up *${formatSolAmountFromLamports(booster.totalTopUpLamports || 0)} SOL*, swept *${formatSolAmountFromLamports(booster.totalSweptLamports || 0)} SOL*`,
+    booster.lastBuySignature ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Last buy tx: \`${booster.lastBuySignature}\`` : null,
+    booster.lastSellSignature ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Last sell tx: \`${booster.lastSellSignature}\`` : null,
+    booster.lastError ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Booster error: \`${booster.lastError}\`` : null,
     ...(Array.isArray(booster.workerWallets) && booster.workerWallets.length > 0
       ? [
         '',
-        'Ã°Å¸â€˜â€º *Worker Wallets*',
+        'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ¢â‚¬Âº *Worker Wallets*',
         ...booster.workerWallets.map((worker, index) => formatOrganicWorkerLabel(worker, index)),
       ]
       : []),
     ...(order.lastBalanceCheckAt || order.lastError
       ? [
         '',
-        'Ã°Å¸â€ºÂ°Ã¯Â¸Â *Checks*',
-        order.lastBalanceCheckAt ? `Ã¢â‚¬Â¢ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
-        order.lastError ? `Ã¢â‚¬Â¢ Last error: \`${order.lastError}\`` : null,
+        'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â *Checks*',
+        order.lastBalanceCheckAt ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
+        order.lastError ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Last error: \`${order.lastError}\`` : null,
       ].filter(Boolean)
       : []),
     '',
-    'Ã°Å¸â€œÂ *Notes*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â *Notes*',
     order.funded
       ? (organicBoosterIsConfigured(order)
         ? (isBundled
-          ? 'Ã¢â‚¬Â¢ Bundled mode uses Jito bundle execution from the deposit wallet.'
-          : 'Ã¢â‚¬Â¢ The deposit wallet funds worker wallets automatically.')
+          ? 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Bundled mode uses Jito bundle execution from the deposit wallet.'
+          : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ The deposit wallet funds worker wallets automatically.')
         : (isBundled
-          ? 'Ã¢â‚¬Â¢ Finish the mint, swap range, and interval to unlock bundled execution.'
-          : 'Ã¢â‚¬Â¢ Finish worker wallets, mint, swap range, and interval to unlock the booster.'))
-      : 'Ã¢â‚¬Â¢ Fund the deposit wallet above, then tap *Refresh Balance*.',
+          ? 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Finish the mint, swap range, and interval to unlock bundled execution.'
+          : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Finish worker wallets, mint, swap range, and interval to unlock the booster.'))
+      : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Fund the deposit wallet above, then tap *Refresh Balance*.',
     isBundled
-      ? 'Ã¢â‚¬Â¢ Bundled mode uses same-block buy and sell bundles through Jito.'
-      : 'Ã¢â‚¬Â¢ Only fund the deposit wallet. Worker wallets are internal.',
+      ? 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Bundled mode uses same-block buy and sell bundles through Jito.'
+      : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Only fund the deposit wallet. Worker wallets are internal.',
     booster.marketPhase === 'bonding_curve'
-      ? 'Ã¢â‚¬Â¢ Not bonded yet: pre-bonding curve trades usually cost more.'
+      ? 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Not bonded yet: pre-bonding curve trades usually cost more.'
       : (booster.marketPhase === 'bonded_pool'
-        ? 'Ã¢â‚¬Â¢ Bonded: graduated pool routing is usually cheaper.'
-        : 'Ã¢â‚¬Â¢ Market data appears after the worker reads mint routing.'),
+        ? 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Bonded: graduated pool routing is usually cheaper.'
+        : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Market data appears after the worker reads mint routing.'),
     order.running
-      ? 'Ã¢â‚¬Â¢ Stop sells back to SOL and sweeps worker wallets home.'
-      : 'Ã¢â‚¬Â¢ Tap *Refresh Balance* anytime to redraw the latest worker stats.',
+      ? 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Stop sells back to SOL and sweeps worker wallets home.'
+      : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Tap *Refresh Balance* anytime to redraw the latest worker stats.',
   ].filter(Boolean).join('\n');
 }
 
@@ -5096,10 +5213,10 @@ function organicVolumeOrderText(user) {
 function burnAgentCatalogText(user) {
   const activeAgents = getVisibleBurnAgents(user, { archived: false });
   return [
-    'Ã°Å¸Â¤â€“ *Burn Agent Manager*',
+    'ÃƒÂ°Ã…Â¸Ã‚Â¤Ã¢â‚¬â€œ *Burn Agent Manager*',
     '',
-    'Ã¢Å¡Â Ã¯Â¸Â *High-risk wallet flow.* Anyone with a private key can drain funds and claim creator rewards.',
-    'Ã¢Å¡Â Ã¯Â¸Â Never reuse a sensitive team wallet here unless you understand the risk.',
+    'ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â *High-risk wallet flow.* Anyone with a private key can drain funds and claim creator rewards.',
+    'ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Never reuse a sensitive team wallet here unless you understand the risk.',
     '',
     'Create a new agent below or open an existing one to edit it.',
     '',
@@ -5110,15 +5227,15 @@ function burnAgentCatalogText(user) {
       ? `Archived agents: *${getVisibleBurnAgents(user, { archived: true }).length}*`
       : 'Archived agents: *0*',
     '',
-    'Ã¢Å¡Â¡ *Lightning Fast*: agent controls the creator wallet directly.',
-    'Ã°Å¸ÂÂ¢ *Normal*: you route a chosen creator-fee share to a managed wallet, and the bot claims/swaps/burns from there.',
+    'ÃƒÂ¢Ã…Â¡Ã‚Â¡ *Lightning Fast*: agent controls the creator wallet directly.',
+    'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¢ *Normal*: you route a chosen creator-fee share to a managed wallet, and the bot claims/swaps/burns from there.',
   ].join('\n');
 }
 
 function burnAgentArchiveText(user) {
   const archivedAgents = getVisibleBurnAgents(user, { archived: true });
   return [
-    'Ã°Å¸â€”â€žÃ¯Â¸Â *Burn Agent Archive*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Å¾ÃƒÂ¯Ã‚Â¸Ã‚Â *Burn Agent Archive*',
     '',
     archivedAgents.length > 0
       ? 'Archived agents stay here until restored or permanently deleted.'
@@ -5131,25 +5248,25 @@ function burnAgentArchiveText(user) {
 function burnAgentEditorTextLegacy(user, balanceLamports = null) {
   const agent = user.burnAgent;
   const lines = [
-    'Ã°Å¸Â¤â€“ *Burn Agent*',
+    'ÃƒÂ°Ã…Â¸Ã‚Â¤Ã¢â‚¬â€œ *Burn Agent*',
     '',
-    'Ã¢Å¡Â Ã¯Â¸Â *Serious wallet warning:* this flow can control funds, creator rewards, and token burns.',
-    'Ã¢Å¡Â Ã¯Â¸Â If you paste a private key here, treat that wallet as hot and operational.',
+    'ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â *Serious wallet warning:* this flow can control funds, creator rewards, and token burns.',
+    'ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â If you paste a private key here, treat that wallet as hot and operational.',
     '',
-    `Ã°Å¸â€ â€ Agent ID: \`${agent.id}\``,
-    `Ã¢Å¡â„¢Ã¯Â¸Â Speed: *${burnAgentSpeedLabel(agent.speed)}*`,
-    `Ã°Å¸â€œÂ¡ Burn Bot: *${agent.automationEnabled ? 'Running' : 'Stopped'}*`,
-    `Ã°Å¸â€™Â¼ Wallet Mode: *${burnAgentWalletModeLabel(agent.walletMode)}*`,
-    `Ã°Å¸ÂÂ¦ Agent Wallet: \`${agent.walletAddress || 'Not ready'}\``,
-    `Ã°Å¸â€™Â° Wallet Balance: *${Number.isInteger(balanceLamports) ? `${formatSolAmountFromLamports(balanceLamports)} SOL` : 'Unavailable'}*`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â Agent ID: \`${agent.id}\``,
+    `ÃƒÂ¢Ã…Â¡Ã¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â Speed: *${burnAgentSpeedLabel(agent.speed)}*`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¡ Burn Bot: *${agent.automationEnabled ? 'Running' : 'Stopped'}*`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¼ Wallet Mode: *${burnAgentWalletModeLabel(agent.walletMode)}*`,
+    `ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â¦ Agent Wallet: \`${agent.walletAddress || 'Not ready'}\``,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â° Wallet Balance: *${Number.isInteger(balanceLamports) ? `${formatSolAmountFromLamports(balanceLamports)} SOL` : 'Unavailable'}*`,
   ];
 
   if (burnAgentNeedsWalletChoice(user)) {
     lines.push(
       '',
       'Choose how the creator wallet will be handled:',
-      'Ã¢â‚¬Â¢ *Generate Wallet*: we create a wallet for you, and you must mint the coin from that wallet.',
-      'Ã¢â‚¬Â¢ *Provide My Own*: you paste the private key for the creator wallet you already control.',
+      'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ *Generate Wallet*: we create a wallet for you, and you must mint the coin from that wallet.',
+      'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ *Provide My Own*: you paste the private key for the creator wallet you already control.',
     );
     return lines.join('\n');
   }
@@ -5157,9 +5274,9 @@ function burnAgentEditorTextLegacy(user, balanceLamports = null) {
   if (agent.speed === 'lightning' && agent.walletMode === 'generated') {
     lines.push(
       '',
-      'Ã¢Å¡Â Ã¯Â¸Â *Mint the coin with this exact wallet.*',
+      'ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â *Mint the coin with this exact wallet.*',
       `Address: \`${agent.walletAddress}\``,
-      'Ã¢Å¡Â Ã¯Â¸Â If you regenerate this wallet, the old private key stops being valid for this agent.',
+      'ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â If you regenerate this wallet, the old private key stops being valid for this agent.',
     );
   } else if (agent.speed === 'lightning' && agent.walletMode === 'provided') {
     lines.push(
@@ -5188,29 +5305,29 @@ function burnAgentEditorTextLegacy(user, balanceLamports = null) {
 
   lines.push(
     '',
-    `Ã°Å¸Âªâ„¢ Mint: ${agent.mintAddress ? `\`${agent.mintAddress}\`` : 'Not set'}`,
+    `ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Mint: ${agent.mintAddress ? `\`${agent.mintAddress}\`` : 'Not set'}`,
   );
 
   if (isNormalBurnAgent(agent)) {
-    lines.push('Ã°Å¸â€Â¥ Burn share: *100% of the rewards routed to this agent*');
+    lines.push('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥ Burn share: *100% of the rewards routed to this agent*');
   } else {
     lines.push(
-      `Ã°Å¸Ââ€ºÃ¯Â¸Â Treasury / keep wallet: ${agent.treasuryAddress ? `\`${agent.treasuryAddress}\`` : 'Not set'}`,
-      `Ã°Å¸â€Â¥ Burn share: ${Number.isInteger(agent.burnPercent) ? `*${agent.burnPercent}%*` : 'Not set'}`,
-      `Ã°Å¸â€™Â¸ Treasury share: ${Number.isInteger(agent.treasuryPercent) ? `*${agent.treasuryPercent}%*` : 'Not set'}`,
+      `ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â‚¬ÂºÃƒÂ¯Ã‚Â¸Ã‚Â Treasury / keep wallet: ${agent.treasuryAddress ? `\`${agent.treasuryAddress}\`` : 'Not set'}`,
+      `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥ Burn share: ${Number.isInteger(agent.burnPercent) ? `*${agent.burnPercent}%*` : 'Not set'}`,
+      `ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¸ Treasury share: ${Number.isInteger(agent.treasuryPercent) ? `*${agent.treasuryPercent}%*` : 'Not set'}`,
     );
   }
 
   if (agent.awaitingField) {
-    lines.push('', `Ã¢ÂÂ³ ${burnAgentPromptLabel(agent.awaitingField)}. Send the value in chat now.`);
+    lines.push('', `ÃƒÂ¢Ã‚ÂÃ‚Â³ ${burnAgentPromptLabel(agent.awaitingField)}. Send the value in chat now.`);
   } else if (burnAgentIsReady(agent)) {
-    lines.push('', 'Ã¢Å“â€¦ Agent setup is complete.');
+    lines.push('', 'ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Agent setup is complete.');
   } else {
     lines.push('', 'Finish the missing fields below to complete this agent.');
   }
 
   if (agent.regenerateConfirmations > 0) {
-    lines.push('', `Ã°Å¸Å¡Â¨ Wallet regenerate confirmation progress: *${agent.regenerateConfirmations}/3*`);
+    lines.push('', `ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Â¨ Wallet regenerate confirmation progress: *${agent.regenerateConfirmations}/3*`);
   }
 
   return lines.join('\n');
@@ -5337,7 +5454,7 @@ function burnAgentEditorText(user, balanceLamports = null) {
 
 function holderBoosterTextLegacy() {
   return [
-    'Ã°Å¸â€˜Â¥ *Holder Booster*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¥ *Holder Booster*',
     '',
     'This flow is being added next.',
     '',
@@ -5348,17 +5465,17 @@ function holderBoosterTextLegacy() {
 function holderBoosterStatusLabel(order) {
   switch (order.status) {
     case 'awaiting_funding':
-      return 'Ã°Å¸Å¸Â  Awaiting Deposit';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â  Awaiting Deposit';
     case 'ready':
-      return 'Ã°Å¸Å¸Â¡ Ready';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¡ Ready';
     case 'processing':
-      return 'Ã°Å¸Å¸Â¡ Processing';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¡ Processing';
     case 'completed':
-      return 'Ã°Å¸Å¸Â¢ Completed';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¢ Completed';
     case 'failed':
-      return 'Ã°Å¸â€Â´ Failed';
+      return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â´ Failed';
     default:
-      return 'Ã¢Å¡Âª Setup';
+      return 'ÃƒÂ¢Ã…Â¡Ã‚Âª Setup';
   }
 }
 
@@ -5366,18 +5483,18 @@ function makeHolderBoosterKeyboard(user) {
   const keyboard = new InlineKeyboard();
   const order = user.holderBooster;
 
-  keyboard.text('Ã°Å¸â€â€ž Refresh', 'holder:refresh');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'holder:refresh');
   keyboard.row();
-  keyboard.text(order.mintAddress ? 'Ã°Å¸Âªâ„¢ Update Mint' : 'Ã°Å¸Âªâ„¢ Set Mint', 'holder:set:mint');
+  keyboard.text(order.mintAddress ? 'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Update Mint' : 'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Set Mint', 'holder:set:mint');
   keyboard.text(
-    Number.isInteger(order.holderCount) ? `Ã°Å¸â€˜Â¥ Holders: ${order.holderCount}` : 'Ã°Å¸â€˜Â¥ Set Holder Count',
+    Number.isInteger(order.holderCount) ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¥ Holders: ${order.holderCount}` : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¥ Set Holder Count',
     'holder:set:holder_count',
   );
   keyboard.row();
-  keyboard.text('Ã¢Å“Â¨ New Holder Boost', 'holder:new');
+  keyboard.text('ÃƒÂ¢Ã…â€œÃ‚Â¨ New Holder Boost', 'holder:new');
   keyboard.row();
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:home');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:home');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
   return keyboard;
 }
 
@@ -5390,29 +5507,29 @@ function holderBoosterText(user) {
     : null;
 
   return [
-    'Ã°Å¸â€˜Â¥ *Holder Booster*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¥ *Holder Booster*',
     '',
-    `Ã°Å¸â€œÂ¦ Status: *${holderBoosterStatusLabel(order)}*`,
-    `Ã°Å¸Âªâ„¢ Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
-    `Ã°Å¸â€˜Â¥ Holders requested: *${order.holderCount || 'Not set'}*`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Status: *${holderBoosterStatusLabel(order)}*`,
+    `ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¥ Holders requested: *${order.holderCount || 'Not set'}*`,
     order.walletAddress ? '' : null,
-    order.walletAddress ? 'Ã°Å¸â€™Â³ *Deposit Wallet*' : null,
+    order.walletAddress ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â³ *Deposit Wallet*' : null,
     order.walletAddress ? `\`${order.walletAddress}\`` : null,
-    order.walletAddress ? `Ã¢â‚¬Â¢ Required SOL: *${order.requiredSol || 'Pending'} SOL*` : null,
-    order.walletAddress ? `Ã¢â‚¬Â¢ Required tokens: *${requiredTokens}*` : null,
-    order.walletAddress ? `Ã¢â‚¬Â¢ SOL balance: *${order.currentSol || '0'} SOL*` : null,
-    order.walletAddress ? `Ã¢â‚¬Â¢ Token balance: *${order.currentTokenAmountDisplay || '0'}*` : null,
-    order.walletAddress ? `Ã¢â‚¬Â¢ Fanout progress: *${order.processedWalletCount || 0}/${order.holderCount || 0}*` : null,
+    order.walletAddress ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Required SOL: *${order.requiredSol || 'Pending'} SOL*` : null,
+    order.walletAddress ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Required tokens: *${requiredTokens}*` : null,
+    order.walletAddress ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ SOL balance: *${order.currentSol || '0'} SOL*` : null,
+    order.walletAddress ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Token balance: *${order.currentTokenAmountDisplay || '0'}*` : null,
+    order.walletAddress ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Fanout progress: *${order.processedWalletCount || 0}/${order.holderCount || 0}*` : null,
     previewWallets.length > 0 ? '' : null,
-    previewWallets.length > 0 ? 'Ã°Å¸Â§Â· *Recipient Wallet Preview*' : null,
-    ...previewWallets.map((wallet, index) => `Ã¢â‚¬Â¢ #${index + 1} \`${wallet.address}\``),
+    previewWallets.length > 0 ? 'ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â· *Recipient Wallet Preview*' : null,
+    ...previewWallets.map((wallet, index) => `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ #${index + 1} \`${wallet.address}\``),
     order.childWallets.length > previewWallets.length
-      ? `Ã¢â‚¬Â¢ ...and *${order.childWallets.length - previewWallets.length}* more`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ...and *${order.childWallets.length - previewWallets.length}* more`
       : null,
     order.lastBalanceCheckAt ? '' : null,
-    order.lastBalanceCheckAt ? `Ã°Å¸â€ºÂ°Ã¯Â¸Â Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
-    order.completedAt ? `Ã¢Å“â€¦ Completed: ${formatTimestamp(order.completedAt)}` : null,
-    order.lastError ? `Ã¢Å¡Â Ã¯Â¸Â Last error: \`${order.lastError}\`` : null,
+    order.lastBalanceCheckAt ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
+    order.completedAt ? `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Completed: ${formatTimestamp(order.completedAt)}` : null,
+    order.lastError ? `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Last error: \`${order.lastError}\`` : null,
     '',
     promptLine || (
       order.walletAddress
@@ -5427,7 +5544,7 @@ function holderBoosterText(user) {
 
 function magicSellText() {
   return [
-    'Ã¢Å“Â¨ *Magic Sell*',
+    'ÃƒÂ¢Ã…â€œÃ‚Â¨ *Magic Sell*',
     '',
     'This will be a separate bot flow.',
     '',
@@ -5449,31 +5566,31 @@ function magicSellPrivateKeyText(order) {
 
 function magicSellStatusLabel(order) {
   if (order.archivedAt) {
-    return 'Ã¢Å¡Â« Archived';
+    return 'ÃƒÂ¢Ã…Â¡Ã‚Â« Archived';
   }
 
   switch (order.status) {
     case 'waiting_target':
-      return 'Ã°Å¸Å¸Â¡ Waiting For Target';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¡ Waiting For Target';
     case 'waiting_inventory':
-      return 'Ã°Å¸Å¸Â  Waiting For Inventory';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â  Waiting For Inventory';
     case 'selling':
-      return 'Ã°Å¸Å¸Â¡ Selling';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¡ Selling';
     case 'running':
-      return 'Ã°Å¸Å¸Â¢ Active';
+      return 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¢ Active';
     case 'stopped':
-      return 'Ã¢Å¡Âª Stopped';
+      return 'ÃƒÂ¢Ã…Â¡Ã‚Âª Stopped';
     case 'failed':
-      return 'Ã°Å¸â€Â´ Error';
+      return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â´ Error';
     default:
-      return order.automationEnabled ? 'Ã°Å¸Å¸Â¢ Active' : 'Ã¢Å¡Âª Setup';
+      return order.automationEnabled ? 'ÃƒÂ°Ã…Â¸Ã…Â¸Ã‚Â¢ Active' : 'ÃƒÂ¢Ã…Â¡Ã‚Âª Setup';
   }
 }
 
 function magicSellListLabel(order) {
   const tokenLabel = order.tokenName?.trim()
     || (order.mintAddress ? `${order.mintAddress.slice(0, 4)}...${order.mintAddress.slice(-4)}` : 'Complete Setup');
-  return `Ã¢Å“Â¨ ${tokenLabel} Ã¢â‚¬Â¢ ${magicSellStatusLabel(order)}`;
+  return `ÃƒÂ¢Ã…â€œÃ‚Â¨ ${tokenLabel} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${magicSellStatusLabel(order)}`;
 }
 
 function magicSellIsReady(order) {
@@ -5489,7 +5606,7 @@ function makeMagicSellCatalogKeyboard(user) {
   const keyboard = new InlineKeyboard();
   const activeOrders = getVisibleMagicSells(user);
 
-  keyboard.text('Ã¢Å“Â¨ New Magic Sell', 'magic:new');
+  keyboard.text('ÃƒÂ¢Ã…â€œÃ‚Â¨ New Magic Sell', 'magic:new');
   keyboard.row();
 
   for (const order of activeOrders) {
@@ -5498,14 +5615,14 @@ function makeMagicSellCatalogKeyboard(user) {
   }
 
   if (getVisibleMagicSells(user, { archived: true }).length > 0) {
-    keyboard.text('Ã°Å¸â€”â€žÃ¯Â¸Â Archive', 'nav:magic_sell_archive');
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Å¾ÃƒÂ¯Ã‚Â¸Ã‚Â Archive', 'nav:magic_sell_archive');
     keyboard.row();
   }
 
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:home');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:home');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
   keyboard.row();
-  keyboard.text('Ã°Å¸â€â€ž Refresh', 'refresh:magic_sell');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:magic_sell');
   return keyboard;
 }
 
@@ -5518,10 +5635,10 @@ function makeMagicSellArchiveKeyboard(user) {
     keyboard.row();
   }
 
-  keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:magic_sell');
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
+  keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:magic_sell');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
   keyboard.row();
-  keyboard.text('Ã°Å¸â€â€ž Refresh', 'refresh:magic_sell_archive');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:magic_sell_archive');
   return keyboard;
 }
 
@@ -5529,70 +5646,70 @@ function makeMagicSellEditorKeyboard(user) {
   const keyboard = new InlineKeyboard();
   const order = user.magicSell;
 
-  keyboard.text('Ã°Å¸â€â€ž Refresh', 'magic:refresh');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'magic:refresh');
   keyboard.row();
-  keyboard.text(order.tokenName ? 'Ã°Å¸ÂÂ·Ã¯Â¸Â Update Name' : 'Ã°Å¸ÂÂ·Ã¯Â¸Â Set Token Name', `magic:set:token_name:${order.id}`);
-  keyboard.text(order.mintAddress ? 'Ã°Å¸Âªâ„¢ Update Mint' : 'Ã°Å¸Âªâ„¢ Set Mint', `magic:set:mint:${order.id}`);
+  keyboard.text(order.tokenName ? 'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â·ÃƒÂ¯Ã‚Â¸Ã‚Â Update Name' : 'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â·ÃƒÂ¯Ã‚Â¸Ã‚Â Set Token Name', `magic:set:token_name:${order.id}`);
+  keyboard.text(order.mintAddress ? 'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Update Mint' : 'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â€žÂ¢ Set Mint', `magic:set:mint:${order.id}`);
   keyboard.row();
   keyboard.text(
     Number.isFinite(order.targetMarketCapUsd)
-      ? `Ã°Å¸Å½Â¯ MC: ${formatUsdCompact(order.targetMarketCapUsd)}`
-      : 'Ã°Å¸Å½Â¯ Set Target MC',
+      ? `ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ MC: ${formatUsdCompact(order.targetMarketCapUsd)}`
+      : 'ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Set Target MC',
     `magic:set:target_market_cap:${order.id}`,
   );
   keyboard.text(
     Array.isArray(order.whitelistWallets) && order.whitelistWallets.length > 0
-      ? `Ã°Å¸â€ºÂ¡Ã¯Â¸Â Whitelist: ${order.whitelistWallets.length}`
-      : 'Ã°Å¸â€ºÂ¡Ã¯Â¸Â Set Whitelist',
+      ? `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Whitelist: ${order.whitelistWallets.length}`
+      : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Set Whitelist',
     `magic:set:whitelist:${order.id}`,
   );
   keyboard.row();
   keyboard.text(
-    `Ã°Å¸â€˜â€º Seller Wallets: ${order.sellerWalletCount || MAGIC_SELL_DEFAULT_SELLER_WALLET_COUNT}`,
+    `ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ¢â‚¬Âº Seller Wallets: ${order.sellerWalletCount || MAGIC_SELL_DEFAULT_SELLER_WALLET_COUNT}`,
     `magic:set:seller_wallet_count:${order.id}`,
   );
   keyboard.text(
-    order.privateKeyVisible ? 'Ã°Å¸â„¢Ë† Hide Private Key' : 'Ã°Å¸â€˜ÂÃ¯Â¸Â Show Private Key',
+    order.privateKeyVisible ? 'ÃƒÂ°Ã…Â¸Ã¢â€žÂ¢Ã‹â€  Hide Private Key' : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â Show Private Key',
     `magic:key:toggle:${order.id}`,
   );
   keyboard.row();
   keyboard.text(
     magicSellIsReady(order)
-      ? (order.automationEnabled ? 'Ã¢ÂÂ¹Ã¯Â¸Â Stop Magic Sell' : 'Ã¢â€“Â¶Ã¯Â¸Â Start Magic Sell')
-      : 'Ã°Å¸â€â€™ Start Magic Sell',
+      ? (order.automationEnabled ? 'ÃƒÂ¢Ã‚ÂÃ‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Stop Magic Sell' : 'ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¶ÃƒÂ¯Ã‚Â¸Ã‚Â Start Magic Sell')
+      : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Start Magic Sell',
     magicSellIsReady(order) ? `magic:toggle:${order.id}` : 'magic:locked:toggle',
   );
   keyboard.row();
 
   if (order.archivedAt) {
-    keyboard.text('Ã¢â„¢Â»Ã¯Â¸Â Restore', `magic:restore:${order.id}`);
-    keyboard.text('Ã°Å¸â€”â€˜Ã¯Â¸Â Delete', `magic:delete:${order.id}`);
+    keyboard.text('ÃƒÂ¢Ã¢â€žÂ¢Ã‚Â»ÃƒÂ¯Ã‚Â¸Ã‚Â Restore', `magic:restore:${order.id}`);
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬ËœÃƒÂ¯Ã‚Â¸Ã‚Â Delete', `magic:delete:${order.id}`);
     keyboard.row();
-    keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:magic_sell_archive');
+    keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:magic_sell_archive');
   } else {
-    keyboard.text('Ã°Å¸â€”â€žÃ¯Â¸Â Archive', `magic:archive:${order.id}`);
+    keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Å¾ÃƒÂ¯Ã‚Â¸Ã‚Â Archive', `magic:archive:${order.id}`);
     keyboard.row();
-    keyboard.text('Ã¢Â¬â€¦Ã¯Â¸Â Back', 'nav:magic_sell');
+    keyboard.text('ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Back', 'nav:magic_sell');
   }
 
-  keyboard.text('Ã°Å¸ÂÂ  Home', 'nav:home');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â  Home', 'nav:home');
   keyboard.row();
-  keyboard.text('Ã°Å¸â€â€ž Refresh', 'refresh:magic_sell_editor');
+  keyboard.text('ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Refresh', 'refresh:magic_sell_editor');
   return keyboard;
 }
 
 function magicSellCatalogText(user) {
   const activeOrders = getVisibleMagicSells(user);
   return [
-    'Ã¢Å“Â¨ *Magic Sell*',
+    'ÃƒÂ¢Ã…â€œÃ‚Â¨ *Magic Sell*',
     '',
     'Sell into real buyer strength only after your chosen market cap is reached.',
     '',
-    'Ã¢â‚¬Â¢ target market-cap trigger',
-    'Ã¢â‚¬Â¢ whitelist wallet ignore list',
-    'Ã¢â‚¬Â¢ fresh deposit wallet for inventory',
-    'Ã¢â‚¬Â¢ rotated seller wallets for execution',
-    'Ã¢â‚¬Â¢ sells 25% of each qualifying buy',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ target market-cap trigger',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ whitelist wallet ignore list',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ fresh deposit wallet for inventory',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ rotated seller wallets for execution',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ sells 25% of each qualifying buy',
     '',
     activeOrders.length > 0
       ? `Active setups: *${activeOrders.length}*`
@@ -5603,7 +5720,7 @@ function magicSellCatalogText(user) {
 function magicSellArchiveText(user) {
   const archivedOrders = getVisibleMagicSells(user, { archived: true });
   return [
-    'Ã°Å¸â€”â€žÃ¯Â¸Â *Magic Sell Archive*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Å¾ÃƒÂ¯Ã‚Â¸Ã‚Â *Magic Sell Archive*',
     '',
     archivedOrders.length > 0
       ? 'Archived Magic Sell setups stay here until you restore or permanently delete them.'
@@ -5620,48 +5737,48 @@ function magicSellEditorText(user) {
     : 0;
 
   return [
-    'Ã¢Å“Â¨ *Magic Sell*',
+    'ÃƒÂ¢Ã…â€œÃ‚Â¨ *Magic Sell*',
     '',
-    'Ã°Å¸â€œâ€¹ *Setup*',
-    `Ã¢â‚¬Â¢ Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
-    `Ã¢â‚¬Â¢ Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
-    `Ã¢â‚¬Â¢ Status: *${magicSellStatusLabel(order)}*`,
-    `Ã¢â‚¬Â¢ Target MC: *${Number.isFinite(order.targetMarketCapUsd) ? formatUsdCompact(order.targetMarketCapUsd) : 'Not set'}*`,
-    `Ã¢â‚¬Â¢ Sell Rule: *${order.sellPercent || MAGIC_SELL_SELL_PERCENT}% of each qualifying buy*`,
-    `Ã¢â‚¬Â¢ Min Buy: *${formatSolAmountFromLamports(order.minimumBuyLamports || MAGIC_SELL_MIN_BUY_LAMPORTS)} SOL*`,
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Â¹ *Setup*',
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Status: *${magicSellStatusLabel(order)}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Target MC: *${Number.isFinite(order.targetMarketCapUsd) ? formatUsdCompact(order.targetMarketCapUsd) : 'Not set'}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Sell Rule: *${order.sellPercent || MAGIC_SELL_SELL_PERCENT}% of each qualifying buy*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Min Buy: *${formatSolAmountFromLamports(order.minimumBuyLamports || MAGIC_SELL_MIN_BUY_LAMPORTS)} SOL*`,
     '',
-    'Ã°Å¸â€™Â³ *Deposit Wallet*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â³ *Deposit Wallet*',
     `\`${order.walletAddress}\``,
-    `Ã¢â‚¬Â¢ SOL on deposit wallet: *${order.currentSol || '0'} SOL*`,
-    `Ã¢â‚¬Â¢ Token inventory: *${order.currentTokenAmountDisplay || '0'}*`,
-    `Ã¢â‚¬Â¢ Stored private key: ${magicSellPrivateKeyText(order)}`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ SOL on deposit wallet: *${order.currentSol || '0'} SOL*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Token inventory: *${order.currentTokenAmountDisplay || '0'}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Stored private key: ${magicSellPrivateKeyText(order)}`,
     '',
-    'Ã°Å¸Âªâ€ž *Seller Wallet Pool*',
-    `Ã¢â‚¬Â¢ Wallets: *${order.sellerWalletCount || MAGIC_SELL_DEFAULT_SELLER_WALLET_COUNT}*`,
-    `Ã¢â‚¬Â¢ Seller SOL total: *${formatSolAmountFromLamports(totalSellerLamports)} SOL*`,
-    `Ã¢â‚¬Â¢ Recommended gas buffer: *${formatSolAmountFromLamports(order.recommendedGasLamports || 0)} SOL*`,
-    ...previewWallets.map((wallet, index) => `Ã¢â‚¬Â¢ #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` Ã¢â‚¬Â¢ ${wallet.currentSol || '0'} SOL Ã¢â‚¬Â¢ ${wallet.currentTokenAmountDisplay || '0'} tokens`),
+    'ÃƒÂ°Ã…Â¸Ã‚ÂªÃ¢â‚¬Å¾ *Seller Wallet Pool*',
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Wallets: *${order.sellerWalletCount || MAGIC_SELL_DEFAULT_SELLER_WALLET_COUNT}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Seller SOL total: *${formatSolAmountFromLamports(totalSellerLamports)} SOL*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Recommended gas buffer: *${formatSolAmountFromLamports(order.recommendedGasLamports || 0)} SOL*`,
+    ...previewWallets.map((wallet, index) => `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${wallet.currentSol || '0'} SOL ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${wallet.currentTokenAmountDisplay || '0'} tokens`),
     order.sellerWallets.length > previewWallets.length
-      ? `Ã¢â‚¬Â¢ ...and *${order.sellerWallets.length - previewWallets.length}* more seller wallets`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ...and *${order.sellerWallets.length - previewWallets.length}* more seller wallets`
       : null,
     '',
-    'Ã°Å¸â€ºÂ¡Ã¯Â¸Â *Whitelist*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â *Whitelist*',
     whitelistPreview.length > 0
-      ? `Ã¢â‚¬Â¢ ${whitelistPreview.map((item) => `\`${item.slice(0, 4)}...${item.slice(-4)}\``).join(', ')}`
-      : 'Ã¢â‚¬Â¢ No wallets whitelisted',
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${whitelistPreview.map((item) => `\`${item.slice(0, 4)}...${item.slice(-4)}\``).join(', ')}`
+      : 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ No wallets whitelisted',
     order.whitelistWallets.length > whitelistPreview.length
-      ? `Ã¢â‚¬Â¢ ...plus *${order.whitelistWallets.length - whitelistPreview.length}* more`
+      ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ...plus *${order.whitelistWallets.length - whitelistPreview.length}* more`
       : null,
     '',
-    'Ã°Å¸â€œË† *Live Stats*',
-    `Ã¢â‚¬Â¢ Current MC: *${Number.isFinite(order.currentMarketCapUsd) ? formatUsdCompact(order.currentMarketCapUsd) : 'Waiting for market data'}*`,
-    `Ã¢â‚¬Â¢ Phase: *${order.marketPhase || 'Unknown'}*`,
-    `Ã¢â‚¬Â¢ Qualifying buys seen: *${order.stats?.triggerCount || 0}*`,
-    `Ã¢â‚¬Â¢ Sells executed: *${order.stats?.sellCount || 0}*`,
-    `Ã¢â‚¬Â¢ Observed buy flow: *${formatSolAmountFromLamports(order.stats?.totalObservedBuyLamports || 0)} SOL*`,
-    `Ã¢â‚¬Â¢ Sell target flow: *${formatSolAmountFromLamports(order.stats?.totalTargetSellLamports || 0)} SOL*`,
-    order.lastBalanceCheckAt ? `Ã¢â‚¬Â¢ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
-    order.lastError ? `Ã¢â‚¬Â¢ Last error: \`${order.lastError}\`` : null,
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‹â€  *Live Stats*',
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Current MC: *${Number.isFinite(order.currentMarketCapUsd) ? formatUsdCompact(order.currentMarketCapUsd) : 'Waiting for market data'}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Phase: *${order.marketPhase || 'Unknown'}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Qualifying buys seen: *${order.stats?.triggerCount || 0}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Sells executed: *${order.stats?.sellCount || 0}*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Observed buy flow: *${formatSolAmountFromLamports(order.stats?.totalObservedBuyLamports || 0)} SOL*`,
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Sell target flow: *${formatSolAmountFromLamports(order.stats?.totalTargetSellLamports || 0)} SOL*`,
+    order.lastBalanceCheckAt ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}` : null,
+    order.lastError ? `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Last error: \`${order.lastError}\`` : null,
     '',
     order.awaitingField
       ? promptForMagicSellField(order.awaitingField)
@@ -5672,7 +5789,7 @@ function magicSellEditorText(user) {
 function amountText(user) {
   const reactionEmoji = selectedButtonEmoji(user);
   return [
-    'Ã°Å¸â€œÂ¦ *Choose Apple Bundle*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ *Choose Apple Bundle*',
     '',
     selectionSnapshot(user),
     '',
@@ -5691,7 +5808,7 @@ function amountText(user) {
 function paymentText(user) {
   if (!user.selection.amount) {
     return [
-      'Ã¢â€”Å½ *Solana Checkout*',
+      'ÃƒÂ¢Ã¢â‚¬â€Ã…Â½ *Solana Checkout*',
       '',
       'Pick a bundle first so the bot can build a SOL quote.',
     ].join('\n');
@@ -5699,7 +5816,7 @@ function paymentText(user) {
 
   if (user.selection.usingFreeTrial) {
     return [
-      'Ã°Å¸Å½Â *Free Trial Checkout*',
+      'ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â *Free Trial Checkout*',
       '',
       selectionSnapshot(user),
       '',
@@ -5711,7 +5828,7 @@ function paymentText(user) {
 
   if (isAdminUser(user.telegramId)) {
     return [
-      'Ã°Å¸â€˜â€˜ *Admin Checkout Override*',
+      'ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ¢â‚¬Ëœ *Admin Checkout Override*',
       '',
       selectionSnapshot(user),
       '',
@@ -5721,7 +5838,7 @@ function paymentText(user) {
 
   if (!cfg.solanaReceiveAddress) {
     return [
-      'Ã¢â€”Å½ *Solana Checkout*',
+      'ÃƒÂ¢Ã¢â‚¬â€Ã…Â½ *Solana Checkout*',
       '',
       'Payment is unavailable because `SOLANA_RECEIVE_ADDRESS` is not configured yet.',
       '',
@@ -5736,7 +5853,7 @@ function paymentText(user) {
       : 'Send the exact SOL amount below, then tap *Check Payment* when it lands.';
 
   return [
-    'Ã¢â€”Å½ *Solana Checkout*',
+    'ÃƒÂ¢Ã¢â‚¬â€Ã…Â½ *Solana Checkout*',
     '',
     selectionSnapshot(user),
     '',
@@ -5750,7 +5867,7 @@ function paymentText(user) {
 
 function targetText(user) {
   return [
-    'Ã°Å¸Å½Â¯ *Target Selection*',
+    'ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ *Target Selection*',
     '',
     selectionSnapshot(user),
     '',
@@ -5792,7 +5909,7 @@ function confirmText(user) {
       : 'Finish checkout first, then come back here to launch.';
 
   return [
-    'Ã°Å¸Å¡â‚¬ *Confirm Test Run*',
+    'ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ *Confirm Test Run*',
     '',
     selectionSnapshot(user),
     '',
@@ -5804,7 +5921,7 @@ function confirmText(user) {
 function statusText(user) {
   const recentLogs = getRecentActivityLogs(user, { limit: 8 });
   return [
-    'Ã°Å¸â€œÅ  *Session Snapshot*',
+    'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  *Session Snapshot*',
     '',
     selectionSnapshot(user),
     '',
@@ -5821,7 +5938,7 @@ function statusText(user) {
 
 function helpText() {
   return [
-    'Ã¢â€žÂ¹Ã¯Â¸Â *How To Use This Bot*',
+    'ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â *How To Use This Bot*',
     '',
     `1. Open the ${BRAND_NAME} menu.`,
     '2. Pick one of the four configured button profiles.',
@@ -5831,11 +5948,11 @@ function helpText() {
     '6. Confirm payment, then launch the run.',
     '',
     '*Safety guardrails*',
-    `Ã¢â‚¬Â¢ Free trial is limited to one run per Telegram account at x${cfg.freeTrialAmount}`,
-    'Ã¢â‚¬Â¢ Payment is tied to the selected bundle size',
-    'Ã¢â‚¬Â¢ A paid quote is consumed after a run, so the next run needs a fresh payment',
-    'Ã¢â‚¬Â¢ You can use the default target or enter a custom URL before paying',
-    'Ã¢â‚¬Â¢ Runner uses Steel proxying and CAPTCHA solving for paid and trial runs',
+    `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Free trial is limited to one run per Telegram account at x${cfg.freeTrialAmount}`,
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Payment is tied to the selected bundle size',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ A paid quote is consumed after a run, so the next run needs a fresh payment',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ You can use the default target or enter a custom URL before paying',
+    'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Runner uses Steel proxying and CAPTCHA solving for paid and trial runs',
   ].join('\n');
 }
 
@@ -5887,6 +6004,8 @@ getScreenMediaPath = function getScreenMediaPath(route) {
     case 'help_launch_buy':
     case 'sniper_wizard':
     case 'help_sniper_wizard':
+    case 'staking':
+    case 'help_staking':
     case 'vanity_wallet':
     case 'help_vanity_wallet':
       return SNIPER_MENU_IMAGE_PATH;
@@ -5951,7 +6070,7 @@ const X_FOLLOWER_PACKAGES = {
     usdPrice: 2.49,
     providerCostUsd: 1.5,
     label: '100 Low-Drop',
-    promise: 'Low-drop • 30-day refill',
+    promise: 'Low-drop â€¢ 30-day refill',
   },
   low_drop_500: {
     key: 'low_drop_500',
@@ -5960,7 +6079,7 @@ const X_FOLLOWER_PACKAGES = {
     usdPrice: 9.99,
     providerCostUsd: 7.5,
     label: '500 Low-Drop',
-    promise: 'Low-drop • 30-day refill',
+    promise: 'Low-drop â€¢ 30-day refill',
   },
   low_drop_1000: {
     key: 'low_drop_1000',
@@ -5969,7 +6088,7 @@ const X_FOLLOWER_PACKAGES = {
     usdPrice: 18.99,
     providerCostUsd: 15.0,
     label: '1000 Low-Drop',
-    promise: 'Low-drop • 30-day refill',
+    promise: 'Low-drop â€¢ 30-day refill',
   },
 };
 
@@ -6042,11 +6161,12 @@ makeHomeKeyboard = function makeHomeKeyboard() {
     .text('\u{1F680} Launch + Buy', 'nav:launch_buy')
     .text('\u{1F9D9} Sniper Wizard', 'nav:sniper_wizard')
     .row()
+    .text('\u{1F4B0} Staking', 'nav:staking')
     .text('\u2728 Vanity Wallet', 'nav:vanity_wallet')
     .row()
     .text('\u{1F52E} Vision', 'nav:community_vision')
-    .row()
     .text('\u{1F440} Wallet Tracker', 'nav:wallet_tracker')
+    .row()
     .text('\u{1F5BC}\uFE0F Resizer', 'nav:resizer')
     .row()
     .text('\u{1F465} X Followers', 'nav:x_followers')
@@ -6057,7 +6177,7 @@ makeHomeKeyboard = function makeHomeKeyboard() {
     .text('\u2139\uFE0F Info', 'nav:help')
     .text('\u{1F4CA} Status', 'nav:status')
     .row()
-    .url('\u{1F4AC} Community', 'https://t.me/wizard_toolz')
+    .url('\u{1F4AC} Community', 'https://t.me/wizardtoolz')
     .url('\u{1F514} Alerts', 'https://t.me/wizardtoolz_alerts')
     .row()
     .url('\u{1F91D} Help', `https://t.me/${SUPPORT_USERNAME}`)
@@ -6209,11 +6329,11 @@ homeText = function homeText() {
     '',
     MENU_DIVIDER,
     '\u{1F680} *Supported Venues*',
-    'Raydium • PumpSwap • Meteora • Pumpfun • Meteora DBC • Bags • LetsBonk • LaunchLab',
+    'Raydium â€¢ PumpSwap â€¢ Meteora â€¢ Pumpfun â€¢ Meteora DBC â€¢ Bags â€¢ LetsBonk â€¢ LaunchLab',
     '',
-    '\u{1F4CA} Plans from 1 SOL • \u{1F6E1}\uFE0F Professional execution • \u{1F381} Free trial available',
+    '\u{1F4CA} Plans from 1 SOL â€¢ \u{1F6E1}\uFE0F Professional execution â€¢ \u{1F381} Free trial available',
     `\u{1F91D} Need help? @${SUPPORT_USERNAME}`,
-    '\u{1F4AC} Community chat: @wizard_toolz',
+    '\u{1F4AC} Community chat: @wizardtoolz',
     '\u{1F514} Alerts channel: @wizardtoolz_alerts',
     '',
     'Ready? Choose a service below.',
@@ -6370,7 +6490,7 @@ helpText = function helpText() {
   return [
     '\u2139\uFE0F *Help & Info*',
     '',
-    'Welcome to *TRENDING TOOLZ* - a premium Telegram control panel for reactions, trading, volume services, smart sell tools, wallet tracking, community alerts, and launch tools.',
+    'Welcome to *WIZARD TOOLZ* - a premium Telegram control panel for reactions, trading, volume services, smart sell tools, wallet tracking, community alerts, and launch tools.',
     '',
     MENU_DIVIDER,
     '\u2728 *How To Use It*',
@@ -6381,15 +6501,15 @@ helpText = function helpText() {
     '',
     MENU_DIVIDER,
     '\u{1F6E1}\uFE0F *Safety Notes*',
-    `• Free trial is limited to one run per Telegram account at x${cfg.freeTrialAmount}.`,
-    '• Paid quotes are tied to the selected package and expire automatically.',
-    '• Wallet-based tools control real on-chain funds, so treat every private key as hot.',
-    '• Always double-check mint addresses, treasury addresses, and deposit amounts before funding.',
+    `â€¢ Free trial is limited to one run per Telegram account at x${cfg.freeTrialAmount}.`,
+    'â€¢ Paid quotes are tied to the selected package and expire automatically.',
+    'â€¢ Wallet-based tools control real on-chain funds, so treat every private key as hot.',
+    'â€¢ Always double-check mint addresses, treasury addresses, and deposit amounts before funding.',
     '',
     MENU_DIVIDER,
     '\u{1F91D} *Support*',
     `Questions or issues: @${SUPPORT_USERNAME}`,
-    'Community chat: @wizard_toolz',
+    'Community chat: @wizardtoolz',
     'Alerts channel: @wizardtoolz_alerts',
     '',
     'Tap a feature button below for a deeper plain-English walkthrough.',
@@ -6418,6 +6538,8 @@ function featureHelpTitle(feature) {
       return '\u{1F680} *Launch + Buy Help*';
     case 'sniper_wizard':
       return '\u{1F9D9} *Sniper Wizard Help*';
+    case 'staking':
+      return '\u{1F4B0} *Staking Help*';
     case 'vanity_wallet':
       return '\u2728 *Vanity Wallet Help*';
     case 'community_vision':
@@ -6504,7 +6626,7 @@ function featureHelpText(feature) {
         '- Set the token CA you want ready on the desk',
         '- Import, generate, and switch trading wallets',
         `- Supported trade routes use a *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* handling fee per executed trade`,
-        '- That is roughly half the 1% trading fee commonly advertised by major Telegram bots',
+        '- That is lower than every competitor we track, and net platform profit is routed 50% to treasury, 25% to buyback + burn, and 25% to the SOL rewards vault',
         '',
         '\u26A0\uFE0F *Important*',
         '- Any imported private key is a hot wallet',
@@ -6620,7 +6742,7 @@ function featureHelpText(feature) {
         `- *Regular Bundle*: free setup, plus normal network fees`,
         `- *Magic Bundle (Stealth)*: *${cfg.magicBundleStealthSetupFeeSol} SOL* setup fee, plus the stealth routing cost`,
         `- Bundle trades charge a *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* handling fee per buy or sell`,
-        '- That is roughly half the 1% trading fee commonly advertised by major Telegram bots',
+        '- That is lower than every competitor we track, and net platform profit is routed 50% to treasury, 25% to buyback + burn, and 25% to the SOL rewards vault',
         '- Network fees must still be covered by the deposit',
         '- The fee estimate is a guide, so it is smart to fund a little extra',
         '- Your bundle setups stay here so you can archive, restore, or delete them later',
@@ -6643,8 +6765,10 @@ function featureHelpText(feature) {
         '- The bot gives you a launch wallet to fund',
         '- That launch wallet is the wallet used for the launch flow',
         '- Buyer wallets are prepared alongside it',
+        '- Funding early lets the worker warm those wallets before launch so the live bundle can fire faster and look cleaner on-chain',
         '- Normal Mode uses the direct path',
         '- Magic Mode uses the hidden routing path before the launch bundle',
+        '- Generated launch wallets stay hidden by default until you reveal them in your own chat',
         '',
         '\u{1F4B0} *Pricing*',
         `- *Normal Mode*: *${formatSolAmountFromLamports(LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS)} SOL* setup fee`,
@@ -6664,10 +6788,12 @@ function featureHelpText(feature) {
         '- You are not buying from your main wallet',
         '- You fund a separate deposit wallet instead',
         '- The bot can arm up to 20 sniper wallets for the launch',
+        '- Funding early lets the worker warm those sniper wallets before you start watching, which improves speed and reduces fresh-funding patterns on-chain',
         '- Normal mode spreads funds directly to those wallets',
         '- Magic mode uses hidden routing before those wallets are armed',
         '- You choose what percent of that wallet should be used for the buy',
         '- The bot always leaves gas behind',
+        '- Generated wallet keys stay hidden by default until you reveal them in your own chat',
         `- *Magic mode* adds a *${formatSolAmountFromLamports(SNIPER_MAGIC_SETUP_FEE_LAMPORTS)} SOL* setup fee plus hidden routing cost`,
         `- Successful snipes use a *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* handling fee`,
         '',
@@ -6675,6 +6801,34 @@ function featureHelpText(feature) {
         '- This is a real hot-wallet flow with real funds',
         '- Only keep the SOL you want to risk in the sniper wallet',
         '- The bot is built to react as fast as it can, but final speed still depends on RPC and launch conditions',
+      ].join('\n');
+    case 'staking':
+      return [
+        featureHelpTitle(feature),
+        '',
+        'Staking is the holder-rewards layer for WIZARD TOOLZ.',
+        '',
+        'You link the WIZARD TOOLZ wallet you want tracked, keep holding over time, then manually claim *SOL* rewards from the bot once your claimable amount is large enough.',
+        '',
+        MENU_DIVIDER,
+        '\u2728 *How Rewards Work*',
+        '- Rewards are paid in *SOL*, not in more WIZARD TOOLZ tokens',
+        '- Platform fees and creator rewards feed the SOL rewards vault',
+        '- Claims are *manual* so you stay in control of when they are submitted',
+        `- Minimum claim amount: *${formatSolAmountFromLamports(STAKING_MIN_CLAIM_LAMPORTS)} SOL*`,
+        `- Normal unstake uses a *${formatDayCountLabel(STAKING_UNSTAKE_COOLDOWN_DAYS)}* cooldown in the hard-staking flow`,
+        '',
+        '\u{1F9E0} *How Rewards Build*',
+        '- Rewards start building immediately once your linked staking wallet is being tracked',
+        `- The first *${formatDayCountLabel(STAKING_EARLY_WEIGHT_DAYS)}* count at a lighter weight so fast in-and-out wallets do not farm much`,
+        '- Bigger bags and longer holds get a larger share whenever new SOL hits the rewards vault',
+        '- You can claim any time once your claimable balance reaches the minimum',
+        '- Current live weight tiers: 0-6 days = 0.25x, 7-29 = 1.0x, 30-89 = 1.25x, 90-179 = 1.5x, 180+ = 2.0x',
+        '',
+        '\u{1F4A1} *Why This Is Good For Holders*',
+        '- Rewards come from real platform revenue instead of token inflation',
+        '- Bigger and longer holds naturally earn a bigger share',
+        '- Manual claims keep the process cleaner and easier to verify',
       ].join('\n');
     case 'vanity_wallet':
       return [
@@ -6685,6 +6839,7 @@ function featureHelpText(feature) {
         MENU_DIVIDER,
         '\u2728 *How It Works*',
         '- Choose whether the address should start with or end with your pattern',
+        '- Example: start with `WIZ` or end with `TOOL`',
         `- Patterns are capped at *${VANITY_WALLET_MAX_PATTERN_LENGTH} characters* on the shared Render stack`,
         '- Pay the fixed service fee shown by the bot',
         '- After payment is matched, the bot brute-forces a fresh wallet in the background and delivers the private key in Telegram',
@@ -6778,7 +6933,7 @@ function featureHelpText(feature) {
       return [
         featureHelpTitle(feature),
         '',
-        'Subscriptions + Accounts is the inquiry menu for digital subscriptions, premium apps, social accounts, and streaming/media access.',
+        'Subscriptions + Accounts is the inquiry menu for digital subscriptions, premium apps, social accounts, and related creative/account services.',
         '',
         'Open the menu, choose *Subscriptions* or *Accounts*, then tap the service you want. The bot will send you straight to support to ask about availability and pricing.',
         '',
@@ -6792,10 +6947,8 @@ function featureHelpText(feature) {
         '- Canva',
         '- Adobe / Adobe Express',
         '',
-        '\u{1F4A1} *Accounts & Media*',
-        '- Instagram, TikTok, X, Telegram, Picsart',
-        '- Netflix, Spotify, Apple TV+, Paramount+',
-        '- IPTV providers, Deezer, VBTV, Megogo',
+        '\u{1F4A1} *Accounts*',
+        '- Instagram, TikTok, X, Telegram, Reddit, Picsart',
         '',
         '\u26A0\uFE0F *Important*',
         `- Pricing and stock can change, so message support at @${SUPPORT_USERNAME} first`,
@@ -6849,6 +7002,8 @@ function makeHelpHubKeyboard() {
     .text('\u{1F680} Launch + Buy Help', 'nav:help_launch_buy')
     .row()
     .text('\u{1F9D9} Sniper Help', 'nav:help_sniper_wizard')
+    .row()
+    .text('\u{1F4B0} Staking Help', 'nav:help_staking')
     .row()
     .text('\u2728 Vanity Wallet Help', 'nav:help_vanity_wallet')
     .row()
@@ -6982,6 +7137,10 @@ function makeCommunityVisionEditorKeyboard(user) {
   const order = user.communityVision;
   keyboard.text(order.handle ? '\u{1F517} Update X Account' : '\u{1F517} Set X Account', `communityvision:set:profile_url:${order.id}`);
   keyboard.row();
+  if (order.handle) {
+    keyboard.url('\u{1F30D} Open X Profile', `https://x.com/${order.handle}`);
+    keyboard.row();
+  }
   keyboard.text(
     order.handle
       ? (order.automationEnabled ? '\u23F9\uFE0F Stop Watch' : '\u25B6\uFE0F Start Watch')
@@ -7159,6 +7318,10 @@ function makeWalletTrackerEditorKeyboard(user) {
   const order = user.walletTracker;
   keyboard.text(order.walletAddress ? '\u{1F517} Update Wallet' : '\u{1F517} Set Wallet', `wallettracker:set:wallet_address:${order.id}`);
   keyboard.row();
+  if (order.walletAddress) {
+    keyboard.url('\u{1F30D} Open On Explorer', `https://solscan.io/account/${order.walletAddress}`);
+    keyboard.row();
+  }
   keyboard.text(`\u{1F4C8} Buy Alerts: ${walletTrackerBuyModeLabel(order.buyMode)}`, `wallettracker:cycle:buy_mode:${order.id}`);
   keyboard.row();
   keyboard.text(order.notifySells ? '\u2705 Sell Alerts: On' : '\u274C Sell Alerts: Off', `wallettracker:toggle:sells:${order.id}`);
@@ -7231,59 +7394,59 @@ function getResizerPreset(mode) {
 
 function resizerStatusLabel(resizer) {
   if (resizer.awaitingImage && resizer.mode) {
-    return '🟢 Waiting For Image';
+    return 'ðŸŸ¢ Waiting For Image';
   }
   if (resizer.lastCompletedAt) {
-    return '✨ Ready For Another Image';
+    return 'âœ¨ Ready For Another Image';
   }
-  return '⚙️ Choose A Format';
+  return 'âš™ï¸ Choose A Format';
 }
 
 function resizerEditorText(user) {
   const resizer = normalizeResizer(user.resizer);
   const preset = getResizerPreset(resizer.mode);
   const lines = [
-    '🖼️ *Resizer*',
+    'ðŸ–¼ï¸ *Resizer*',
     '',
     'Turn one image into a clean logo square or a polished banner without stretching it or wrecking the proportions.',
     '',
-    '📐 *Current Setup*',
-    `• Format: ${preset ? `*${preset.emoji} ${preset.label} • ${preset.ratioLabel}*` : '*Not selected*'}`,
-    `• Status: *${resizerStatusLabel(resizer)}*`,
+    'ðŸ“ *Current Setup*',
+    `â€¢ Format: ${preset ? `*${preset.emoji} ${preset.label} â€¢ ${preset.ratioLabel}*` : '*Not selected*'}`,
+    `â€¢ Status: *${resizerStatusLabel(resizer)}*`,
   ];
 
   if (preset) {
-    lines.push(`• Output: *${preset.width} x ${preset.height} PNG*`);
+    lines.push(`â€¢ Output: *${preset.width} x ${preset.height} PNG*`);
   }
 
   lines.push(
     '',
-    '✨ *What The Bot Does*',
-    '• Keeps the original proportions intact',
-    '• Avoids ugly stretching and broken crops',
-    '• Centers the image cleanly for the selected format',
+    'âœ¨ *What The Bot Does*',
+    'â€¢ Keeps the original proportions intact',
+    'â€¢ Avoids ugly stretching and broken crops',
+    'â€¢ Centers the image cleanly for the selected format',
   );
 
   if (resizer.lastCompletedAt) {
     lines.push(
       '',
-      '📦 *Last Result*',
-      `• Finished: ${formatTimestamp(resizer.lastCompletedAt)}`,
-      ...(resizer.lastSourceName ? [`• Source: *${escapeMarkdown(resizer.lastSourceName)}*`] : []),
+      'ðŸ“¦ *Last Result*',
+      `â€¢ Finished: ${formatTimestamp(resizer.lastCompletedAt)}`,
+      ...(resizer.lastSourceName ? [`â€¢ Source: *${escapeMarkdown(resizer.lastSourceName)}*`] : []),
       ...(resizer.lastOutputWidth && resizer.lastOutputHeight
-        ? [`• Delivered: *${resizer.lastOutputWidth} x ${resizer.lastOutputHeight}*`]
+        ? [`â€¢ Delivered: *${resizer.lastOutputWidth} x ${resizer.lastOutputHeight}*`]
         : []),
     );
   }
 
   if (resizer.lastError) {
-    lines.push('', `⚠️ Last note: \`${resizer.lastError}\``);
+    lines.push('', `âš ï¸ Last note: \`${resizer.lastError}\``);
   }
 
   lines.push(
     '',
     resizer.awaitingImage && preset
-      ? `📤 Send your image as a photo or image file now and I’ll return a clean *${preset.label.toLowerCase()}* version.`
+      ? `ðŸ“¤ Send your image as a photo or image file now and Iâ€™ll return a clean *${preset.label.toLowerCase()}* version.`
       : 'Choose *Logo* or *Banner* below to begin.',
   );
 
@@ -7298,25 +7461,25 @@ function makeResizerKeyboard(user) {
 
   keyboard.text(
     resizer.mode === 'logo'
-      ? `✅ ${logoPreset.emoji} Logo • ${logoPreset.ratioLabel}`
-      : `${logoPreset.emoji} Logo • ${logoPreset.ratioLabel}`,
+      ? `âœ… ${logoPreset.emoji} Logo â€¢ ${logoPreset.ratioLabel}`
+      : `${logoPreset.emoji} Logo â€¢ ${logoPreset.ratioLabel}`,
     'resizer:set_mode:logo',
   );
   keyboard.text(
     resizer.mode === 'banner'
-      ? `✅ ${bannerPreset.emoji} Banner • ${bannerPreset.ratioLabel}`
-      : `${bannerPreset.emoji} Banner • ${bannerPreset.ratioLabel}`,
+      ? `âœ… ${bannerPreset.emoji} Banner â€¢ ${bannerPreset.ratioLabel}`
+      : `${bannerPreset.emoji} Banner â€¢ ${bannerPreset.ratioLabel}`,
     'resizer:set_mode:banner',
   );
   keyboard.row();
-  keyboard.text('♻️ Reset', 'resizer:reset');
+  keyboard.text('â™»ï¸ Reset', 'resizer:reset');
   keyboard.row();
-  keyboard.text('⬅️ Back', 'nav:home');
-  keyboard.text('🏠 Home', 'nav:home');
+  keyboard.text('â¬…ï¸ Back', 'nav:home');
+  keyboard.text('ðŸ  Home', 'nav:home');
   keyboard.row();
-  keyboard.text('ℹ️ Help', 'nav:help_resizer');
+  keyboard.text('â„¹ï¸ Help', 'nav:help_resizer');
   keyboard.row();
-  keyboard.text('🔄 Refresh', 'refresh:resizer');
+  keyboard.text('ðŸ”„ Refresh', 'refresh:resizer');
   return keyboard;
 }
 
@@ -7405,23 +7568,24 @@ function buySellText(user) {
     '',
     MENU_DIVIDER,
     '\u2728 *Desk Overview*',
-    `• Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
-    `• Wallet address: ${activeWallet ? `\`${activeWallet.address}\`` : 'Add or generate a wallet first'}`,
-    `• Wallet count: *${tradingDesk.wallets.length}*`,
-    `• Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None selected'}*`,
-    `• Quick trade CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
+    `â€¢ Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
+    `â€¢ Wallet address: ${activeWallet ? `\`${activeWallet.address}\`` : 'Add or generate a wallet first'}`,
+    `â€¢ Wallet count: *${tradingDesk.wallets.length}*`,
+    `â€¢ Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None selected'}*`,
+    `â€¢ Quick trade CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
     '',
-    `â€¢ Quick buy size: *${tradingDesk.quickBuySol || 'Not set'} SOL*`,
-    `â€¢ Quick sell size: *${tradingDesk.quickSellPercent}%*`,
-    `â€¢ Handling fee: *${formatBpsPercent(tradingDesk.handlingFeeBps || cfg.tradingHandlingFeeBps)}* per trade`,
+    `Ã¢â‚¬Â¢ Quick buy size: *${tradingDesk.quickBuySol || 'Not set'} SOL*`,
+    `Ã¢â‚¬Â¢ Quick sell size: *${tradingDesk.quickSellPercent}%*`,
+    `Ã¢â‚¬Â¢ Handling fee: *${formatBpsPercent(tradingDesk.handlingFeeBps || cfg.tradingHandlingFeeBps)}* per trade`,
     '\u{1F4CA} *What This Menu Is For*',
-    '• Quick token buy / sell flow',
-    '• Wallet import and wallet generation',
-    '• Bundle selection for multi-wallet execution',
-    '• Limit-order and copy-trading control panels',
+    'â€¢ Quick token buy / sell flow',
+    'â€¢ Wallet import and wallet generation',
+    'â€¢ Bundle selection for multi-wallet execution',
+    'â€¢ Limit-order and copy-trading control panels',
     '',
     '\u26A0\uFE0F *Hot-Wallet Warning*',
     'Any wallet imported here should be treated like a live trading wallet with real funds.',
+    'Generated and imported private keys stay hidden by default in the bot. Never share them with support.',
     ...(tradingDesk.awaitingField ? ['', promptForBuySellField(tradingDesk.awaitingField)] : []),
     ...(tradingDesk.lastError ? ['', `Last error: \`${tradingDesk.lastError}\``] : []),
   ].join('\n');
@@ -7434,8 +7598,8 @@ function makeBuySellWalletsKeyboard(user) {
 
   for (const wallet of tradingDesk.wallets.slice(0, 6)) {
     const label = wallet.id === tradingDesk.activeWalletId
-      ? `\u2705 ${wallet.label} • ${wallet.currentSol || '0'} SOL`
-      : `${wallet.label} • ${wallet.currentSol || '0'} SOL`;
+      ? `\u2705 ${wallet.label} â€¢ ${wallet.currentSol || '0'} SOL`
+      : `${wallet.label} â€¢ ${wallet.currentSol || '0'} SOL`;
     keyboard.text(label, `buy_sell:select_wallet:${wallet.id}`);
     keyboard.row();
   }
@@ -7462,9 +7626,9 @@ function buySellWalletsText(user) {
   const activeWallet = getActiveTradingWallet(user);
   const walletLines = tradingDesk.wallets.length > 0
     ? tradingDesk.wallets.slice(0, 6).map((wallet, index) => (
-      `• #${index + 1} ${wallet.id === tradingDesk.activeWalletId ? '\u2705' : '\u25CB'} *${wallet.label}* • \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` • ${wallet.currentSol || '0'} SOL`
+      `â€¢ #${index + 1} ${wallet.id === tradingDesk.activeWalletId ? '\u2705' : '\u25CB'} *${wallet.label}* â€¢ \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` â€¢ ${wallet.currentSol || '0'} SOL`
     ))
-    : ['• No trading wallets yet. Import one or generate one below.'];
+    : ['â€¢ No trading wallets yet. Import one or generate one below.'];
   return [
     '\u{1F45B} *Wallet Settings*',
     '',
@@ -7472,9 +7636,9 @@ function buySellWalletsText(user) {
     '',
     '\u{1F4B3} *Active Wallet*',
     activeWallet
-      ? `• *${activeWallet.label}* • \`${activeWallet.address}\``
-      : '• No active wallet selected yet.',
-    ...(activeWallet ? [`• Private key: ${activeWallet.privateKeyVisible ? `\`${activeWallet.secretKeyBase58}\`` : '*Hidden*'}`] : []),
+      ? `â€¢ *${activeWallet.label}* â€¢ \`${activeWallet.address}\``
+      : 'â€¢ No active wallet selected yet.',
+    ...(activeWallet ? [`â€¢ Private key: ${activeWallet.privateKeyVisible ? `\`${activeWallet.secretKeyBase58}\`` : '*Hidden*'}`] : []),
     '',
     '\u{1F4DC} *Wallet List*',
     ...walletLines,
@@ -7505,9 +7669,9 @@ function buySellQuickText(user) {
     '',
     'Paste a token CA to get this desk ready for fast trading.',
     '',
-    `• Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
-    `• Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
-    `• Wallet ready: *${activeWallet ? 'Yes' : 'No'}*`,
+    `â€¢ Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
+    `â€¢ Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
+    `â€¢ Wallet ready: *${activeWallet ? 'Yes' : 'No'}*`,
     '',
     'Use this desk to keep your active wallet, token CA, and bundle selection organized for trading.',
     ...(tradingDesk.awaitingField ? ['', promptForBuySellField(tradingDesk.awaitingField)] : []),
@@ -7531,10 +7695,10 @@ function buySellLimitText() {
     'This section is for setting automatic entries and exits instead of staring at the chart all day.',
     '',
     'Professional trading bots typically let you:',
-    '• place limit buys below current price',
-    '• place take-profit sells above current price',
-    '• place stop-loss sells below current price',
-    '• choose a validity window for each order',
+    'â€¢ place limit buys below current price',
+    'â€¢ place take-profit sells above current price',
+    'â€¢ place stop-loss sells below current price',
+    'â€¢ choose a validity window for each order',
     '',
     'Use this menu as the control center for structured entries, profit targets, and downside protection.',
   ].join('\n');
@@ -7547,11 +7711,11 @@ function buySellCopyText() {
     'This section is for following another wallet and copying its buys and sells with your own trading wallet.',
     '',
     'Professional copy-trade flows usually include:',
-    '• wallet to follow',
-    '• buy amount rules',
-    '• sell matching rules',
-    '• stop-loss / take-profit controls',
-    '• whitelist / blacklist safety filters',
+    'â€¢ wallet to follow',
+    'â€¢ buy amount rules',
+    'â€¢ sell matching rules',
+    'â€¢ stop-loss / take-profit controls',
+    'â€¢ whitelist / blacklist safety filters',
     '',
     'Use this menu as the control center for wallet-following rules, sizing, and risk controls.',
   ].join('\n');
@@ -7588,13 +7752,13 @@ function buySellQuickLiveText(user) {
     '',
     'Queue an immediate market buy or sell from your active wallet or selected bundle wallets.',
     '',
-    `â€¢ Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
-    `â€¢ Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
-    `â€¢ Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None'}*`,
-    `â€¢ Buy size: *${tradingDesk.quickBuySol || 'Not set'} SOL*`,
-    `â€¢ Sell size: *${tradingDesk.quickSellPercent}%*`,
-    `â€¢ Wallet ready: *${activeWallet ? 'Yes' : 'No'}*`,
-    `â€¢ Pending action: *${tradingDesk.pendingAction ? `${tradingDesk.pendingAction.type} queued` : 'None'}*`,
+    `Ã¢â‚¬Â¢ Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
+    `Ã¢â‚¬Â¢ Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
+    `Ã¢â‚¬Â¢ Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None'}*`,
+    `Ã¢â‚¬Â¢ Buy size: *${tradingDesk.quickBuySol || 'Not set'} SOL*`,
+    `Ã¢â‚¬Â¢ Sell size: *${tradingDesk.quickSellPercent}%*`,
+    `Ã¢â‚¬Â¢ Wallet ready: *${activeWallet ? 'Yes' : 'No'}*`,
+    `Ã¢â‚¬Â¢ Pending action: *${tradingDesk.pendingAction ? `${tradingDesk.pendingAction.type} queued` : 'None'}*`,
     '',
     `Handling fee: *${formatBpsPercent(tradingDesk.handlingFeeBps || cfg.tradingHandlingFeeBps)}* per executed trade.`,
     ...(tradingDesk.awaitingField ? ['', promptForBuySellField(tradingDesk.awaitingField)] : []),
@@ -7639,11 +7803,11 @@ function buySellLimitLiveText(user) {
     '',
     'Arm a market-cap trigger and let the worker execute the trade automatically when the level is reached.',
     '',
-    `â€¢ Side: *${desk.limitOrder.side === 'buy' ? 'Buy' : 'Sell'}*`,
-    `â€¢ Trigger MC: *${desk.limitOrder.triggerMarketCapUsd ? `$${Math.round(desk.limitOrder.triggerMarketCapUsd).toLocaleString('en-US')}` : 'Not set'}*`,
-    `â€¢ Buy size: *${desk.limitOrder.buySol || 'Not set'} SOL*`,
-    `â€¢ Sell size: *${desk.limitOrder.sellPercent}%*`,
-    `â€¢ Status: *${desk.limitOrder.enabled ? 'Armed' : 'Stopped'}*`,
+    `Ã¢â‚¬Â¢ Side: *${desk.limitOrder.side === 'buy' ? 'Buy' : 'Sell'}*`,
+    `Ã¢â‚¬Â¢ Trigger MC: *${desk.limitOrder.triggerMarketCapUsd ? `$${Math.round(desk.limitOrder.triggerMarketCapUsd).toLocaleString('en-US')}` : 'Not set'}*`,
+    `Ã¢â‚¬Â¢ Buy size: *${desk.limitOrder.buySol || 'Not set'} SOL*`,
+    `Ã¢â‚¬Â¢ Sell size: *${desk.limitOrder.sellPercent}%*`,
+    `Ã¢â‚¬Â¢ Status: *${desk.limitOrder.enabled ? 'Armed' : 'Stopped'}*`,
     '',
     'Buy triggers fire when market cap is at or below your target. Sell triggers fire when market cap is at or above your target.',
     ...(desk.awaitingField ? ['', promptForBuySellField(desk.awaitingField)] : []),
@@ -7685,14 +7849,14 @@ function buySellCopyLiveText(user) {
     '',
     'Follow another wallet and mirror its buys and sells with your own active trading wallet or selected bundle.',
     '',
-    `â€¢ Follow wallet: ${desk.copyTrade.followWalletAddress ? `\`${desk.copyTrade.followWalletAddress}\`` : '*Not set*'}`,
-    `â€¢ Fixed buy size: *${desk.copyTrade.fixedBuySol || 'Not set'} SOL*`,
-    `â€¢ Copy sells: *${desk.copyTrade.copySells ? 'Yes' : 'No'}*`,
-    `â€¢ Status: *${desk.copyTrade.enabled ? 'Watching' : 'Stopped'}*`,
-    `â€¢ Copied buys: *${desk.copyTrade.stats.buyCount}*`,
-    `â€¢ Copied sells: *${desk.copyTrade.stats.sellCount}*`,
+    `Ã¢â‚¬Â¢ Follow wallet: ${desk.copyTrade.followWalletAddress ? `\`${desk.copyTrade.followWalletAddress}\`` : '*Not set*'}`,
+    `Ã¢â‚¬Â¢ Fixed buy size: *${desk.copyTrade.fixedBuySol || 'Not set'} SOL*`,
+    `Ã¢â‚¬Â¢ Copy sells: *${desk.copyTrade.copySells ? 'Yes' : 'No'}*`,
+    `Ã¢â‚¬Â¢ Status: *${desk.copyTrade.enabled ? 'Watching' : 'Stopped'}*`,
+    `Ã¢â‚¬Â¢ Copied buys: *${desk.copyTrade.stats.buyCount}*`,
+    `Ã¢â‚¬Â¢ Copied sells: *${desk.copyTrade.stats.sellCount}*`,
     '',
-    'Buys use your fixed SOL size. Sells mirror the tracked wallet’s sell fraction when copy-sells is enabled.',
+    'Buys use your fixed SOL size. Sells mirror the tracked walletâ€™s sell fraction when copy-sells is enabled.',
     ...(desk.awaitingField ? ['', promptForBuySellField(desk.awaitingField)] : []),
     ...(desk.copyTrade.lastError ? ['', `Last error: \`${desk.copyTrade.lastError}\``] : []),
   ].join('\n');
@@ -7754,10 +7918,10 @@ organicVolumeText = function organicVolumeText(user) {
     '',
     MENU_DIVIDER,
     '\u{1F4CA} *What You Get*',
-    '• Randomized wallet activity and trade sizing',
-    '• Internal worker-wallet rotation',
-    '• Live progress, cost, and runtime estimates',
-    '• Archive support for completed boosters',
+    'â€¢ Randomized wallet activity and trade sizing',
+    'â€¢ Internal worker-wallet rotation',
+    'â€¢ Live progress, cost, and runtime estimates',
+    'â€¢ Archive support for completed boosters',
     '',
     `Active boosters: *${activeBoosters.length}*`,
     `Archived boosters: *${archivedBoosters.length}*`,
@@ -7794,10 +7958,10 @@ bundledVolumeText = function bundledVolumeText() {
     '',
     MENU_DIVIDER,
     '\u26A1\uFE0F *Bundled Advantages*',
-    '• Same-slot Jito bundle execution',
-    '• Lower cost profile than standard routed activity',
-    '• Built for faster chart momentum',
-    '• Automatic treasury/dev split handling before execution',
+    'â€¢ Same-slot Jito bundle execution',
+    'â€¢ Lower cost profile than standard routed activity',
+    'â€¢ Built for faster chart momentum',
+    'â€¢ Automatic treasury/dev split handling before execution',
     '',
     '\u{1F4CA} *Bundle Packages* (`\u21A9\uFE0F Creator rebate included`)',
     ...BUNDLED_VOLUME_PACKAGES.map((pkg) => `${pkg.emoji} ${pkg.label} - *${pkg.priceSol} SOL* (\u21A9\uFE0F ${pkg.rebateSol} SOL)`),
@@ -8052,6 +8216,7 @@ burnAgentCatalogText = function burnAgentCatalogText(user) {
     '',
     '\u26A0\uFE0F *Important:* this is a serious wallet flow. Any private key added here is treated as a live hot wallet.',
     '\u26A0\uFE0F Never paste a sensitive team wallet unless you fully understand the risk.',
+    '\u26A0\uFE0F Keys are hidden by default in the bot, but support should never need your private key.',
     '',
     `Active agents: *${activeAgents.length}*`,
     `Archived agents: *${archivedCount}*`,
@@ -8175,18 +8340,18 @@ holderBoosterText = function holderBoosterText(user) {
       '',
       '\u{1F4B3} *Deposit Wallet*',
       `\`${order.walletAddress}\``,
-      `• Required SOL: *${order.requiredSol || 'Pending'} SOL*`,
-      `• Required tokens: *${requiredTokens}*`,
-      `• SOL balance: *${order.currentSol || '0'} SOL*`,
-      `• Token balance: *${order.currentTokenAmountDisplay || '0'}*`,
-      `• Fanout progress: *${order.processedWalletCount || 0}/${order.holderCount || 0}*`,
+      `â€¢ Required SOL: *${order.requiredSol || 'Pending'} SOL*`,
+      `â€¢ Required tokens: *${requiredTokens}*`,
+      `â€¢ SOL balance: *${order.currentSol || '0'} SOL*`,
+      `â€¢ Token balance: *${order.currentTokenAmountDisplay || '0'}*`,
+      `â€¢ Fanout progress: *${order.processedWalletCount || 0}/${order.holderCount || 0}*`,
     ] : []),
     ...(previewWallets.length > 0 ? [
       '',
       '\u{1F4C2} *Recipient Wallet Preview*',
-      ...previewWallets.map((wallet, index) => `• #${index + 1} \`${wallet.address}\``),
+      ...previewWallets.map((wallet, index) => `â€¢ #${index + 1} \`${wallet.address}\``),
       ...(order.childWallets.length > previewWallets.length
-        ? [`• ...and *${order.childWallets.length - previewWallets.length}* more`] : []),
+        ? [`â€¢ ...and *${order.childWallets.length - previewWallets.length}* more`] : []),
     ] : []),
     ...(order.lastBalanceCheckAt ? ['', `\u{1F570}\uFE0F Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}`] : []),
     ...(order.completedAt ? [`\u2705 Completed: ${formatTimestamp(order.completedAt)}`] : []),
@@ -8240,7 +8405,7 @@ function fomoBoosterStatusLabel(order) {
     case 'bootstrapping':
       return '\u{1F7E1} Building Inventory';
     case 'bootstrapped':
-      return '\u{1F7E2} Ready';
+      return '\u{1F7E2} Warmed / Ready';
     case 'waiting_funds':
       return '\u{1F7E1} Waiting For Fuel';
     case 'failed':
@@ -8341,7 +8506,7 @@ function formatFomoWorkerLabel(worker, index) {
   const shortAddress = worker.address
     ? `${worker.address.slice(0, 4)}...${worker.address.slice(-4)}`
     : `wallet-${index + 1}`;
-  return `• #${index + 1} \`${shortAddress}\` • ${worker.currentSol || '0'} SOL • ${worker.currentTokenAmountDisplay || '0'} tokens • ${worker.status || 'idle'}`;
+  return `â€¢ #${index + 1} \`${shortAddress}\` â€¢ ${worker.currentSol || '0'} SOL â€¢ ${worker.currentTokenAmountDisplay || '0'} tokens â€¢ ${worker.status || 'idle'}`;
 }
 
 function fomoBoosterText(user) {
@@ -8354,42 +8519,42 @@ function fomoBoosterText(user) {
     '',
     MENU_DIVIDER,
     '\u26A1\uFE0F *How It Works*',
-    '• Each bundle submits *2 buys + 1 sell*',
-    '• Buys and sells are spread across different generated wallets',
-    '• Timing and size are randomized within your settings',
-    '• Main cost is fuel and trade friction, not large one-shot buys',
+    'â€¢ Each bundle submits *2 buys + 1 sell*',
+    'â€¢ Buys and sells are spread across different generated wallets',
+    'â€¢ Timing and size are randomized within your settings',
+    'â€¢ Main cost is fuel and trade friction, not large one-shot buys',
     '',
     '\u{1F4CB} *Setup*',
-    `• Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
-    `• Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
-    `• Status: *${order.status || 'setup'}*`,
-    `• Wallet count: *${order.walletCount || FOMO_DEFAULT_WALLET_COUNT}*`,
-    `• Buy range: *${formatSolRange(order.minBuySol, order.maxBuySol)}*`,
-    `• Delay range: *${formatSecondRange(order.minIntervalSeconds, order.maxIntervalSeconds)}*`,
+    `â€¢ Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
+    `â€¢ Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
+    `â€¢ Status: *${order.status || 'setup'}*`,
+    `â€¢ Wallet count: *${order.walletCount || FOMO_DEFAULT_WALLET_COUNT}*`,
+    `â€¢ Buy range: *${formatSolRange(order.minBuySol, order.maxBuySol)}*`,
+    `â€¢ Delay range: *${formatSecondRange(order.minIntervalSeconds, order.maxIntervalSeconds)}*`,
     '',
     '\u{1F4B3} *Deposit Wallet*',
     `\`${order.walletAddress}\``,
-    `• SOL on deposit wallet: *${order.currentSol || '0'} SOL*`,
-    `• Managed balance: *${formatSolAmountFromLamports(order.totalManagedLamports || 0)} SOL*`,
-    `• Stored private key: ${fomoBoosterPrivateKeyText(order)}`,
-    `• Recommended gas reserve: *${formatSolAmountFromLamports(order.recommendedGasLamports || 0)} SOL*`,
+    `â€¢ SOL on deposit wallet: *${order.currentSol || '0'} SOL*`,
+    `â€¢ Managed balance: *${formatSolAmountFromLamports(order.totalManagedLamports || 0)} SOL*`,
+    `â€¢ Stored private key: ${fomoBoosterPrivateKeyText(order)}`,
+    `â€¢ Recommended gas reserve: *${formatSolAmountFromLamports(order.recommendedGasLamports || 0)} SOL*`,
     '',
     '\u{1F4C8} *Live Stats*',
-    `• Market phase: *${order.marketPhase || 'Unknown'}*`,
-    `• Current market cap: *${Number.isFinite(order.currentMarketCapUsd) ? formatUsdCompact(order.currentMarketCapUsd) : 'Waiting for market data'}*`,
-    `• Bundles executed: *${order.stats?.bundleCount || 0}*`,
-    `• Buy legs executed: *${order.stats?.buyCount || 0}*`,
-    `• Sell legs executed: *${order.stats?.sellCount || 0}*`,
-    `• Total buy flow: *${formatSolAmountFromLamports(order.stats?.totalBuyLamports || 0)} SOL*`,
-    `• Total sell flow: *${formatSolAmountFromLamports(order.stats?.totalSellLamports || 0)} SOL*`,
-    ...(order.lastBundleId ? [`• Last bundle ID: \`${order.lastBundleId}\``] : []),
-    ...(order.lastBundleAt ? [`• Last bundle: ${formatTimestamp(order.lastBundleAt)}`] : []),
-    ...(order.lastBalanceCheckAt ? [`• Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}`] : []),
-    ...(order.lastError ? [`• Last error: \`${order.lastError}\``] : []),
+    `â€¢ Market phase: *${order.marketPhase || 'Unknown'}*`,
+    `â€¢ Current market cap: *${Number.isFinite(order.currentMarketCapUsd) ? formatUsdCompact(order.currentMarketCapUsd) : 'Waiting for market data'}*`,
+    `â€¢ Bundles executed: *${order.stats?.bundleCount || 0}*`,
+    `â€¢ Buy legs executed: *${order.stats?.buyCount || 0}*`,
+    `â€¢ Sell legs executed: *${order.stats?.sellCount || 0}*`,
+    `â€¢ Total buy flow: *${formatSolAmountFromLamports(order.stats?.totalBuyLamports || 0)} SOL*`,
+    `â€¢ Total sell flow: *${formatSolAmountFromLamports(order.stats?.totalSellLamports || 0)} SOL*`,
+    ...(order.lastBundleId ? [`â€¢ Last bundle ID: \`${order.lastBundleId}\``] : []),
+    ...(order.lastBundleAt ? [`â€¢ Last bundle: ${formatTimestamp(order.lastBundleAt)}`] : []),
+    ...(order.lastBalanceCheckAt ? [`â€¢ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}`] : []),
+    ...(order.lastError ? [`â€¢ Last error: \`${order.lastError}\``] : []),
     ...(previewWallets.length > 0
       ? ['', '\u{1F45B} *Worker Wallet Preview*', ...previewWallets.map((wallet, index) => formatFomoWorkerLabel(wallet, index))]
       : []),
-    ...(order.workerWallets.length > previewWallets.length ? [`• ...and *${order.workerWallets.length - previewWallets.length}* more`] : []),
+    ...(order.workerWallets.length > previewWallets.length ? [`â€¢ ...and *${order.workerWallets.length - previewWallets.length}* more`] : []),
     '',
     order.awaitingField
       ? promptForFomoField(order.awaitingField)
@@ -8666,6 +8831,15 @@ function makeSniperWizardKeyboard(user) {
     order.walletAddress ? 'sniper:withdraw' : 'sniper:locked:withdraw',
   );
   keyboard.row();
+  keyboard.text(
+    Array.isArray(order.workerWallets) && order.workerWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)
+      ? '\u{1F4BC} Add Wallets To Buy / Sell'
+      : '\u{1F512} Add Wallets To Buy / Sell',
+    Array.isArray(order.workerWallets) && order.workerWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)
+      ? 'sniper:add_to_trading'
+      : 'sniper:locked:add_to_trading',
+  );
+  keyboard.row();
   keyboard.text('\u2139\uFE0F Help', 'nav:help_sniper_wizard');
   keyboard.row();
   keyboard.text('\u2B05\uFE0F Back', 'nav:home');
@@ -8683,7 +8857,7 @@ function sniperWizardEditorText(user) {
   const workerPreview = Array.isArray(order.workerWallets)
     ? order.workerWallets.slice(0, 5).map((wallet, index) => {
       const shortAddress = wallet.address ? `${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}` : 'Pending';
-      return `- #${index + 1} \`${shortAddress}\` • ${wallet.currentSol || '0'} SOL`;
+      return `- #${index + 1} \`${shortAddress}\` â€¢ ${wallet.currentSol || '0'} SOL`;
     })
     : [];
 
@@ -8698,9 +8872,11 @@ function sniperWizardEditorText(user) {
     '- The bot gives you one deposit wallet plus your chosen number of sniper wallets',
     '- Normal mode spreads funds directly to those sniper wallets',
     '- Magic mode uses the hidden routing path before the sniper wallets are armed',
+    '- Funding early lets the worker warm those wallets before the live trigger, which improves speed and makes wallet flow look less freshly staged on-chain',
     '- Once armed, it keeps watching that wallet for a fresh launch',
     '- When a launch is detected, it tries to buy immediately across the funded sniper wallets',
     `- Handling fee: *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per successful snipe`,
+    '- Generated wallet keys stay hidden by default until you reveal them in your own bot flow',
     '',
     '\u{1F4CB} *Setup*',
     `- Status: *${sniperWizardStatusLabel(order)}*`,
@@ -8716,6 +8892,8 @@ function sniperWizardEditorText(user) {
     `- Planned snipe size right now: *${formatSolAmountFromLamports(plannedLamports)} SOL*`,
     `- Gas reserve on deposit wallet: *${formatSolAmountFromLamports(SNIPER_GAS_RESERVE_LAMPORTS)} SOL*`,
     `- Stored private key: ${sniperWizardPrivateKeyText(order)}`,
+    '- Never share the private key with support. Treat it like a live hot wallet.',
+    '- Best practice: fund early and let the bot warm the sniper wallets before you start watching.',
     '',
     '\u{1F4B8} *Fees*',
     `- Normal mode setup: *Free*`,
@@ -8746,7 +8924,7 @@ function sniperWizardEditorText(user) {
       ? promptForSniperField(order.awaitingField)
       : (
         sniperWizardIsReady(order)
-          ? 'Fund the deposit wallet with SOL, then start the bot when you are ready to watch for a launch.'
+          ? 'Fund early if possible, refresh once the wallet is topped up, and let the bot warm the sniper wallets before you start watching for the fastest fire.'
           : 'Choose Normal or Magic mode, set the wallet count, target wallet, and snipe percentage to arm this wizard.'
       ),
   ].join('\n');
@@ -8829,11 +9007,11 @@ magicSellCatalogText = function magicSellCatalogText(user) {
     '',
     MENU_DIVIDER,
     '\u{1F4CA} *How It Works*',
-    '• You choose the chart and target market cap.',
-    '• Whitelisted wallets are ignored.',
-    '• A fresh deposit wallet holds your inventory.',
-    '• Seller wallets rotate so sells do not all come from one address.',
-    '• The bot reacts to qualifying buys and sells 25% of that buy flow.',
+    'â€¢ You choose the chart and target market cap.',
+    'â€¢ Whitelisted wallets are ignored.',
+    'â€¢ A fresh deposit wallet holds your inventory.',
+    'â€¢ Seller wallets rotate so sells do not all come from one address.',
+    'â€¢ The bot reacts to qualifying buys and sells 25% of that buy flow.',
     '',
     activeOrders.length > 0
       ? `Active setups: *${activeOrders.length}*`
@@ -8975,15 +9153,15 @@ function magicBundleCatalogText(user) {
     '',
     MENU_DIVIDER,
     '\u{1F4CA} *How It Works*',
-    '• You choose the token mint and how many bundle wallets you want.',
-    '• The bot gives you one deposit wallet to fund.',
-    '• Once funded, the bot prepares the stealth routing flow to fan the SOL out across your bundle wallets.',
-    '• Your bundle wallets stay grouped here so you can keep managing them later.',
+    'â€¢ You choose the token mint and how many bundle wallets you want.',
+    'â€¢ The bot gives you one deposit wallet to fund.',
+    'â€¢ Once funded, the bot prepares the stealth routing flow to fan the SOL out across your bundle wallets.',
+    'â€¢ Your bundle wallets stay grouped here so you can keep managing them later.',
     '',
     '\u{1F4B0} *Costs To Cover*',
-    `• Stealth setup fee: *${cfg.magicBundleStealthSetupFeeSol} SOL*`,
-    `• Stealth routing estimate: *up to ${formatBpsPercent(cfg.magicBundleSplitNowFeeEstimateBps)}*`,
-    '• Network fees also apply, so fund a little extra for safety.',
+    `â€¢ Stealth setup fee: *${cfg.magicBundleStealthSetupFeeSol} SOL*`,
+    `â€¢ Stealth routing estimate: *up to ${formatBpsPercent(cfg.magicBundleSplitNowFeeEstimateBps)}*`,
+    'â€¢ Network fees also apply, so fund a little extra for safety.',
     '',
     activeOrders.length > 0
       ? `Active bundles: *${activeOrders.length}*`
@@ -9005,20 +9183,20 @@ function magicBundleArchiveText(user) {
 magicBundleCatalogText = function magicBundleCatalogText(user) {
   const activeOrders = getVisibleMagicBundles(user);
   return [
-    '✨ *Magic Bundle*',
+    'âœ¨ *Magic Bundle*',
     '',
     'Build a fresh multi-wallet trading bundle from one funded wallet.',
     '',
-    '📊 *How It Works*',
-    '• Choose the token CA and how many bundle wallets you want.',
-    '• Fund the deposit wallet the bot gives you.',
-    '• Your balance is spread across the bundle wallets automatically.',
-    '• Once the split is done, you can arm protection like stop loss, take profit, trailing stop, buy dip, and creator-sell shielding.',
+    'ðŸ“Š *How It Works*',
+    'â€¢ Choose the token CA and how many bundle wallets you want.',
+    'â€¢ Fund the deposit wallet the bot gives you.',
+    'â€¢ Your balance is spread across the bundle wallets automatically.',
+    'â€¢ Once the split is done, you can arm protection like stop loss, take profit, trailing stop, buy dip, and creator-sell shielding.',
     '',
-    '💰 *What To Cover*',
-    `• Stealth setup fee: *${cfg.magicBundleStealthSetupFeeSol} SOL*`,
-    `• Stealth routing estimate: *up to ${formatBpsPercent(cfg.magicBundleSplitNowFeeEstimateBps)}*`,
-    '• Keep a little extra SOL on top for network fees.',
+    'ðŸ’° *What To Cover*',
+    `â€¢ Stealth setup fee: *${cfg.magicBundleStealthSetupFeeSol} SOL*`,
+    `â€¢ Stealth routing estimate: *up to ${formatBpsPercent(cfg.magicBundleSplitNowFeeEstimateBps)}*`,
+    'â€¢ Keep a little extra SOL on top for network fees.',
     '',
     activeOrders.length > 0
       ? `Active bundles: *${activeOrders.length}*`
@@ -9122,7 +9300,8 @@ function launchBuyCatalogText(user) {
     '\u2022 Fill in the same launch details Pump asks for: name, symbol, description, logo, and socials.',
     '\u2022 Choose *Normal Mode* or *Magic Mode* for the funding path.',
     '\u2022 Choose how many buyer wallets you want to use, or import your own.',
-    '\u2022 Fund the launch wallet, then the bot handles the launch bundle flow.',
+    '\u2022 Fund the launch wallet, then let the bot warm the buyer wallets before the launch bundle fires.',
+    '\u2022 Funding early gives the worker time to prepare the wallet set, which improves speed and reduces last-second funding patterns on-chain.',
     '',
     '\u{1F4B0} *Pricing*',
     `\u2022 *Normal Mode*: *${formatSolAmountFromLamports(LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS)} SOL* setup fee`,
@@ -9169,7 +9348,7 @@ function makeLaunchBuyEditorKeyboard(user) {
   keyboard.text(order.website ? '\u{1F310} Website' : '\u{1F310} Set Website', `launchbuy:set:website:${order.id}`);
   keyboard.text(order.telegram ? '\u{1F4AC} Telegram' : '\u{1F4AC} Set Telegram', `launchbuy:set:telegram:${order.id}`);
   keyboard.row();
-  keyboard.text(order.twitter ? '𝕏 Twitter' : '𝕏 Set Twitter', `launchbuy:set:twitter:${order.id}`);
+  keyboard.text(order.twitter ? 'ð• Twitter' : 'ð• Set Twitter', `launchbuy:set:twitter:${order.id}`);
   keyboard.text(order.privateKeyVisible ? '\u{1F648} Hide Key' : '\u{1F441}\uFE0F Show Key', `launchbuy:key:toggle:${order.id}`);
   keyboard.row();
   if (order.archivedAt) {
@@ -9190,6 +9369,15 @@ function makeLaunchBuyEditorKeyboard(user) {
       launchBuyIsReady(order) && !['queued', 'launching'].includes(order.status)
         ? `launchbuy:launch:${order.id}`
         : 'launchbuy:locked:launch',
+    );
+    keyboard.row();
+    keyboard.text(
+      Array.isArray(order.buyerWallets) && order.buyerWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)
+        ? '\u{1F4BC} Add Wallets To Buy / Sell'
+        : '\u{1F512} Add Wallets To Buy / Sell',
+      Array.isArray(order.buyerWallets) && order.buyerWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)
+        ? `launchbuy:add_to_trading:${order.id}`
+        : 'launchbuy:locked:add_to_trading',
     );
     keyboard.row();
     keyboard.text('\u2B05\uFE0F Back', 'nav:launch_buy');
@@ -9234,11 +9422,14 @@ function launchBuyEditorText(user) {
     `\`${order.walletAddress}\``,
     `\u2022 Wallet balance: *${order.currentSol || '0'} SOL*`,
     `\u2022 Stored private key: ${launchBuyPrivateKeyText(order)}`,
+    '\u2022 Generated keys stay hidden by default until you reveal them in your own bot flow.',
+    '\u2022 Best practice: fund early and refresh once before launch so the buyer wallets can be warmed in advance.',
     '',
     '\u{1F4B0} *Funding Guide*',
     `\u2022 Setup fee: *${formatSolAmountFromLamports(order.estimatedSetupFeeLamports || 0)} SOL*`,
     ...(order.launchMode === 'magic' ? [`\u2022 Hidden routing estimate: *${formatSolAmountFromLamports(order.estimatedRoutingFeeLamports || 0)} SOL*`] : []),
     `\u2022 Estimated total needed: *${formatSolAmountFromLamports(order.estimatedTotalNeededLamports || 0)} SOL*`,
+    '\u2022 Funding early improves launch speed because the bot can prepare buyer wallets before the live launch moment.',
     '',
     '\u{1F45B} *Buyer Wallet Preview*',
     ...(walletPreview.length > 0 ? walletPreview : ['\u2022 Buyer wallets not ready yet.']),
@@ -9251,7 +9442,7 @@ function launchBuyEditorText(user) {
       ? promptForLaunchBuyField(order.awaitingField, order)
       : (
         launchBuyIsReady(order)
-          ? 'Fund the launch wallet with the full amount shown above, then use this screen to review the bundle before launch.'
+          ? 'Fund early if possible, refresh after the wallet is topped up, and let the bot warm the buyer wallets before you press launch.'
           : 'Finish the launch fields above to prepare this launch bundle.'
       ),
     ...(order.lastError ? ['', `\u26A0\uFE0F Last note: \`${order.lastError}\``] : []),
@@ -9325,38 +9516,38 @@ function magicBundleEditorText(user) {
     'One funded wallet in, many bundle wallets out.',
     '',
     '\u{1F4CB} *Bundle Setup*',
-    `• Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
-    `• CA: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
-    `• Status: *${magicBundleStatusLabel(order)}*`,
-    `• Bundle wallets: *${order.walletCount || MAGIC_BUNDLE_DEFAULT_WALLET_COUNT}*`,
+    `â€¢ Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
+    `â€¢ CA: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
+    `â€¢ Status: *${magicBundleStatusLabel(order)}*`,
+    `â€¢ Bundle wallets: *${order.walletCount || MAGIC_BUNDLE_DEFAULT_WALLET_COUNT}*`,
     '',
     '\u{1F4B3} *Deposit Wallet*',
     `\`${order.walletAddress}\``,
-    `• Deposit balance: *${order.currentSol || '0'} SOL*`,
-    `• Total managed balance: *${formatSolAmountFromLamports(order.totalManagedLamports || 0)} SOL*`,
+    `â€¢ Deposit balance: *${order.currentSol || '0'} SOL*`,
+    `â€¢ Total managed balance: *${formatSolAmountFromLamports(order.totalManagedLamports || 0)} SOL*`,
     '',
     '\u{1F4B0} *Fees & Net Split*',
-    `• Setup fee: *${order.bundleMode === 'standard' ? 'Free' : `${formatSolAmountFromLamports(order.estimatedPlatformFeeLamports || 0)} SOL`}*`,
-    `• Stealth routing estimate: *${formatSolAmountFromLamports(order.estimatedSplitNowFeeLamports || 0)} SOL*`,
-    `• Estimated amount split to bundle wallets: *${formatSolAmountFromLamports(order.estimatedNetSplitLamports || 0)} SOL*`,
+    `â€¢ Setup fee: *${order.bundleMode === 'standard' ? 'Free' : `${formatSolAmountFromLamports(order.estimatedPlatformFeeLamports || 0)} SOL`}*`,
+    `â€¢ Stealth routing estimate: *${formatSolAmountFromLamports(order.estimatedSplitNowFeeLamports || 0)} SOL*`,
+    `â€¢ Estimated amount split to bundle wallets: *${formatSolAmountFromLamports(order.estimatedNetSplitLamports || 0)} SOL*`,
     '',
     '\u{1F6E0}\uFE0F *Trade Controls*',
-    `• Stop loss: *${Number.isFinite(order.stopLossPercent) ? `${order.stopLossPercent}%` : 'Not set'}*`,
-    `• Take profit: *${Number.isFinite(order.takeProfitPercent) ? `${order.takeProfitPercent}%` : 'Not set'}*`,
-    `• Trailing stop: *${Number.isFinite(order.trailingStopLossPercent) ? `${order.trailingStopLossPercent}%` : 'Not set'}*`,
-    `• Buy dip: *${Number.isFinite(order.buyDipPercent) ? `${order.buyDipPercent}%` : 'Not set'}*`,
-    `• Sell on dev sell: *${order.sellOnDevSell ? 'Yes' : 'No'}*`,
+    `â€¢ Stop loss: *${Number.isFinite(order.stopLossPercent) ? `${order.stopLossPercent}%` : 'Not set'}*`,
+    `â€¢ Take profit: *${Number.isFinite(order.takeProfitPercent) ? `${order.takeProfitPercent}%` : 'Not set'}*`,
+    `â€¢ Trailing stop: *${Number.isFinite(order.trailingStopLossPercent) ? `${order.trailingStopLossPercent}%` : 'Not set'}*`,
+    `â€¢ Buy dip: *${Number.isFinite(order.buyDipPercent) ? `${order.buyDipPercent}%` : 'Not set'}*`,
+    `â€¢ Sell on dev sell: *${order.sellOnDevSell ? 'Yes' : 'No'}*`,
     '',
     '\u{1F9FE} *Split Status*',
-    `• Routing status: *${splitStatus}*`,
-    ...(order.splitnowOrderId ? [`• Order ID: \`${order.splitnowOrderId}\``] : []),
-    ...(order.splitnowDepositAddress ? [`• Routing deposit wallet: \`${order.splitnowDepositAddress}\``] : []),
-    ...(order.splitCompletedAt ? [`• Split completed: ${formatTimestamp(order.splitCompletedAt)}`] : []),
+    `â€¢ Routing status: *${splitStatus}*`,
+    ...(order.splitnowOrderId ? [`â€¢ Order ID: \`${order.splitnowOrderId}\``] : []),
+    ...(order.splitnowDepositAddress ? [`â€¢ Routing deposit wallet: \`${order.splitnowDepositAddress}\``] : []),
+    ...(order.splitCompletedAt ? [`â€¢ Split completed: ${formatTimestamp(order.splitCompletedAt)}`] : []),
     '',
     '\u{1F45B} *Bundle Wallet Preview*',
-    ...previewWallets.map((wallet, index) => `• #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` • ${wallet.currentSol || '0'} SOL`),
+    ...previewWallets.map((wallet, index) => `â€¢ #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` â€¢ ${wallet.currentSol || '0'} SOL`),
     ...(order.splitWallets.length > previewWallets.length
-      ? [`• ...and *${order.splitWallets.length - previewWallets.length}* more wallets`] : []),
+      ? [`â€¢ ...and *${order.splitWallets.length - previewWallets.length}* more wallets`] : []),
     ...(order.lastBalanceCheckAt ? ['', `Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}`] : []),
     ...(order.lastError ? [`Last error: \`${order.lastError}\``] : []),
     '',
@@ -9372,61 +9563,61 @@ makeMagicBundleEditorKeyboard = function makeMagicBundleEditorKeyboard(user) {
   const keyboard = new InlineKeyboard();
   const order = user.magicBundle;
 
-  keyboard.text(order.tokenName ? '🏷️ Update Name' : '🏷️ Set Token Name', `magicbundle:set:token_name:${order.id}`);
-  keyboard.text(order.mintAddress ? '🪙 Update CA' : '🪙 Set CA', `magicbundle:set:mint:${order.id}`);
+  keyboard.text(order.tokenName ? 'ðŸ·ï¸ Update Name' : 'ðŸ·ï¸ Set Token Name', `magicbundle:set:token_name:${order.id}`);
+  keyboard.text(order.mintAddress ? 'ðŸª™ Update CA' : 'ðŸª™ Set CA', `magicbundle:set:mint:${order.id}`);
   keyboard.row();
-  keyboard.text(`👛 Wallets: ${order.walletCount || MAGIC_BUNDLE_DEFAULT_WALLET_COUNT}`, `magicbundle:set:wallet_count:${order.id}`);
+  keyboard.text(`ðŸ‘› Wallets: ${order.walletCount || MAGIC_BUNDLE_DEFAULT_WALLET_COUNT}`, `magicbundle:set:wallet_count:${order.id}`);
   keyboard.row();
   keyboard.text(
-    Number.isFinite(order.stopLossPercent) ? `🛑 Stop Loss ${order.stopLossPercent}%` : '🛑 Set Stop Loss',
+    Number.isFinite(order.stopLossPercent) ? `ðŸ›‘ Stop Loss ${order.stopLossPercent}%` : 'ðŸ›‘ Set Stop Loss',
     `magicbundle:set:stop_loss:${order.id}`,
   );
   keyboard.text(
-    Number.isFinite(order.takeProfitPercent) ? `🎯 Take Profit ${order.takeProfitPercent}%` : '🎯 Set Take Profit',
+    Number.isFinite(order.takeProfitPercent) ? `ðŸŽ¯ Take Profit ${order.takeProfitPercent}%` : 'ðŸŽ¯ Set Take Profit',
     `magicbundle:set:take_profit:${order.id}`,
   );
   keyboard.row();
   keyboard.text(
     Number.isFinite(order.trailingStopLossPercent)
-      ? `📉 Trail ${order.trailingStopLossPercent}%`
-      : '📉 Set Trailing Stop',
+      ? `ðŸ“‰ Trail ${order.trailingStopLossPercent}%`
+      : 'ðŸ“‰ Set Trailing Stop',
     `magicbundle:set:trailing_stop_loss:${order.id}`,
   );
   keyboard.text(
-    Number.isFinite(order.buyDipPercent) ? `💸 Buy Dip ${order.buyDipPercent}%` : '💸 Set Buy Dip',
+    Number.isFinite(order.buyDipPercent) ? `ðŸ’¸ Buy Dip ${order.buyDipPercent}%` : 'ðŸ’¸ Set Buy Dip',
     `magicbundle:set:buy_dip:${order.id}`,
   );
   keyboard.row();
   keyboard.text(
-    order.sellOnDevSell ? '✅ Creator Sell Shield: On' : '❌ Creator Sell Shield: Off',
+    order.sellOnDevSell ? 'âœ… Creator Sell Shield: On' : 'âŒ Creator Sell Shield: Off',
     `magicbundle:set:sell_on_dev_sell:${order.id}`,
   );
   keyboard.row();
   keyboard.text(
     magicBundleCanStart(order)
-      ? (order.automationEnabled ? '⏹️ Stop Protection' : '▶️ Start Protection')
-      : '🔒 Start Protection',
+      ? (order.automationEnabled ? 'â¹ï¸ Stop Protection' : 'â–¶ï¸ Start Protection')
+      : 'ðŸ”’ Start Protection',
     magicBundleCanStart(order) ? `magicbundle:toggle:${order.id}` : 'magicbundle:locked:toggle',
   );
   keyboard.row();
 
   if (order.archivedAt) {
-    keyboard.text('♻️ Restore', `magicbundle:restore:${order.id}`);
+    keyboard.text('â™»ï¸ Restore', `magicbundle:restore:${order.id}`);
     keyboard.text(
-      order.deleteConfirmations >= 1 ? '🚨 Confirm Delete' : '🗑️ Delete',
+      order.deleteConfirmations >= 1 ? 'ðŸš¨ Confirm Delete' : 'ðŸ—‘ï¸ Delete',
       `magicbundle:delete:${order.id}`,
     );
     keyboard.row();
-    keyboard.text('⬅️ Back', 'nav:magic_bundle_archive');
+    keyboard.text('â¬…ï¸ Back', 'nav:magic_bundle_archive');
   } else {
-    keyboard.text('🗄️ Archive', `magicbundle:archive:${order.id}`);
+    keyboard.text('ðŸ—„ï¸ Archive', `magicbundle:archive:${order.id}`);
     keyboard.row();
-    keyboard.text('⬅️ Back', 'nav:magic_bundle');
+    keyboard.text('â¬…ï¸ Back', 'nav:magic_bundle');
   }
 
-  keyboard.text('🏠 Home', 'nav:home');
+  keyboard.text('ðŸ  Home', 'nav:home');
   keyboard.row();
-  keyboard.text('🔄 Refresh', 'refresh:magic_bundle_editor');
+  keyboard.text('ðŸ”„ Refresh', 'refresh:magic_bundle_editor');
   return keyboard;
 };
 
@@ -9439,53 +9630,53 @@ magicBundleEditorText = function magicBundleEditorText(user) {
   const lastTrigger = magicBundleTriggerLabel(order.lastTriggerReason || stats.lastTriggerReason);
 
   return [
-    '✨ *Magic Bundle*',
+    'âœ¨ *Magic Bundle*',
     '',
     'Turn one funded wallet into a protected multi-wallet bundle.',
     '',
-    '📋 *Bundle Setup*',
-    `• Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
-    `• CA: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
-    `• Status: *${magicBundleStatusLabel(order)}*`,
-    `• Bundle wallets: *${order.walletCount || MAGIC_BUNDLE_DEFAULT_WALLET_COUNT}*`,
+    'ðŸ“‹ *Bundle Setup*',
+    `â€¢ Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
+    `â€¢ CA: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
+    `â€¢ Status: *${magicBundleStatusLabel(order)}*`,
+    `â€¢ Bundle wallets: *${order.walletCount || MAGIC_BUNDLE_DEFAULT_WALLET_COUNT}*`,
     '',
-    '💳 *Deposit Wallet*',
+    'ðŸ’³ *Deposit Wallet*',
     `\`${order.walletAddress}\``,
-    `• Deposit balance: *${order.currentSol || '0'} SOL*`,
-    `• Total managed SOL: *${formatSolAmountFromLamports(order.totalManagedLamports || 0)} SOL*`,
+    `â€¢ Deposit balance: *${order.currentSol || '0'} SOL*`,
+    `â€¢ Total managed SOL: *${formatSolAmountFromLamports(order.totalManagedLamports || 0)} SOL*`,
     '',
-    '🛡️ *Protection Engine*',
-    `• Protection: *${order.automationEnabled ? 'Running' : 'Stopped'}*`,
-    `• Live token balance: *${order.currentTokenAmountDisplay || '0'}*`,
-    `• Live position value: *${positionValueSol} SOL*`,
-    `• Last trigger: *${lastTrigger}*`,
-    ...(order.creatorAddress ? [`• Creator wallet detected: \`${order.creatorAddress}\``] : []),
+    'ðŸ›¡ï¸ *Protection Engine*',
+    `â€¢ Protection: *${order.automationEnabled ? 'Running' : 'Stopped'}*`,
+    `â€¢ Live token balance: *${order.currentTokenAmountDisplay || '0'}*`,
+    `â€¢ Live position value: *${positionValueSol} SOL*`,
+    `â€¢ Last trigger: *${lastTrigger}*`,
+    ...(order.creatorAddress ? [`â€¢ Creator wallet detected: \`${order.creatorAddress}\``] : []),
     '',
-    '⚙️ *Trade Controls*',
-    `• Stop loss: *${Number.isFinite(order.stopLossPercent) ? `${order.stopLossPercent}%` : 'Not set'}*`,
-    `• Take profit: *${Number.isFinite(order.takeProfitPercent) ? `${order.takeProfitPercent}%` : 'Not set'}*`,
-    `• Trailing stop: *${Number.isFinite(order.trailingStopLossPercent) ? `${order.trailingStopLossPercent}%` : 'Not set'}*`,
-    `• Buy dip: *${Number.isFinite(order.buyDipPercent) ? `${order.buyDipPercent}%` : 'Not set'}*`,
-    `• Sell on creator sell: *${order.sellOnDevSell ? 'Yes' : 'No'}*`,
+    'âš™ï¸ *Trade Controls*',
+    `â€¢ Stop loss: *${Number.isFinite(order.stopLossPercent) ? `${order.stopLossPercent}%` : 'Not set'}*`,
+    `â€¢ Take profit: *${Number.isFinite(order.takeProfitPercent) ? `${order.takeProfitPercent}%` : 'Not set'}*`,
+    `â€¢ Trailing stop: *${Number.isFinite(order.trailingStopLossPercent) ? `${order.trailingStopLossPercent}%` : 'Not set'}*`,
+    `â€¢ Buy dip: *${Number.isFinite(order.buyDipPercent) ? `${order.buyDipPercent}%` : 'Not set'}*`,
+    `â€¢ Sell on creator sell: *${order.sellOnDevSell ? 'Yes' : 'No'}*`,
     '',
-    '📈 *Bundle Stats*',
-    `• Actions fired: *${stats.triggerCount}*`,
-    `• Dip buys: *${stats.dipBuyCount}*`,
-    `• Sells: *${stats.sellCount}*`,
-    `• Total buy size: *${formatSolAmountFromLamports(stats.totalBuyLamports)} SOL*`,
-    `• Total sell size: *${formatSolAmountFromLamports(stats.totalSellLamports)} SOL*`,
+    'ðŸ“ˆ *Bundle Stats*',
+    `â€¢ Actions fired: *${stats.triggerCount}*`,
+    `â€¢ Dip buys: *${stats.dipBuyCount}*`,
+    `â€¢ Sells: *${stats.sellCount}*`,
+    `â€¢ Total buy size: *${formatSolAmountFromLamports(stats.totalBuyLamports)} SOL*`,
+    `â€¢ Total sell size: *${formatSolAmountFromLamports(stats.totalSellLamports)} SOL*`,
     '',
-    '💰 *Funding & Split*',
-    `• Setup fee: *${order.bundleMode === 'standard' ? 'Free' : `${formatSolAmountFromLamports(order.estimatedPlatformFeeLamports || 0)} SOL`}*`,
-    `• Stealth routing estimate: *${formatSolAmountFromLamports(order.estimatedSplitNowFeeLamports || 0)} SOL*`,
-    `• Estimated amount reaching bundle wallets: *${formatSolAmountFromLamports(order.estimatedNetSplitLamports || 0)} SOL*`,
-    `• Split status: *${splitStatus}*`,
-    ...(order.splitCompletedAt ? [`• Split completed: ${formatTimestamp(order.splitCompletedAt)}`] : []),
+    'ðŸ’° *Funding & Split*',
+    `â€¢ Setup fee: *${order.bundleMode === 'standard' ? 'Free' : `${formatSolAmountFromLamports(order.estimatedPlatformFeeLamports || 0)} SOL`}*`,
+    `â€¢ Stealth routing estimate: *${formatSolAmountFromLamports(order.estimatedSplitNowFeeLamports || 0)} SOL*`,
+    `â€¢ Estimated amount reaching bundle wallets: *${formatSolAmountFromLamports(order.estimatedNetSplitLamports || 0)} SOL*`,
+    `â€¢ Split status: *${splitStatus}*`,
+    ...(order.splitCompletedAt ? [`â€¢ Split completed: ${formatTimestamp(order.splitCompletedAt)}`] : []),
     '',
-    '👛 *Bundle Wallet Preview*',
-    ...previewWallets.map((wallet, index) => `• #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` • ${wallet.currentSol || '0'} SOL • ${wallet.currentTokenAmountDisplay || '0'} tokens`),
+    'ðŸ‘› *Bundle Wallet Preview*',
+    ...previewWallets.map((wallet, index) => `â€¢ #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` â€¢ ${wallet.currentSol || '0'} SOL â€¢ ${wallet.currentTokenAmountDisplay || '0'} tokens`),
     ...(order.splitWallets.length > previewWallets.length
-      ? [`• ...and *${order.splitWallets.length - previewWallets.length}* more wallets`] : []),
+      ? [`â€¢ ...and *${order.splitWallets.length - previewWallets.length}* more wallets`] : []),
     ...(order.lastBalanceCheckAt ? ['', `Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}`] : []),
     ...(order.lastError ? [`Last error: \`${order.lastError}\``] : []),
     '',
@@ -9608,6 +9799,77 @@ magicBundleEditorText = function magicBundleEditorText(user) {
   ].filter(Boolean).join('\n');
 };
 
+makeMagicBundleEditorKeyboard = function makeMagicBundleEditorKeyboard(user) {
+  const keyboard = new InlineKeyboard();
+  const order = user.magicBundle;
+
+  keyboard.text('\u{1F3F7}\uFE0F Update Name', `magicbundle:set:token_name:${order.id}`);
+  keyboard.text(order.mintAddress ? '\u{1FA99} Update CA' : '\u{1FA99} Set CA', `magicbundle:set:mint:${order.id}`);
+  keyboard.row();
+  keyboard.text(`\u{1F45B} Wallets: ${order.walletCount || MAGIC_BUNDLE_DEFAULT_WALLET_COUNT}`, `magicbundle:set:wallet_count:${order.id}`);
+  keyboard.row();
+  keyboard.text(
+    Number.isFinite(order.stopLossPercent) ? `\u{1F6D1} Stop Loss ${order.stopLossPercent}%` : '\u{1F6D1} Set Stop Loss',
+    `magicbundle:set:stop_loss:${order.id}`,
+  );
+  keyboard.text(
+    Number.isFinite(order.takeProfitPercent) ? `\u{1F3AF} Take Profit ${order.takeProfitPercent}%` : '\u{1F3AF} Set Take Profit',
+    `magicbundle:set:take_profit:${order.id}`,
+  );
+  keyboard.row();
+  keyboard.text(
+    Number.isFinite(order.trailingStopLossPercent)
+      ? `\u{1F4C9} Trail ${order.trailingStopLossPercent}%`
+      : '\u{1F4C9} Set Trailing Stop',
+    `magicbundle:set:trailing_stop_loss:${order.id}`,
+  );
+  keyboard.text(
+    Number.isFinite(order.buyDipPercent) ? `\u{1F4B8} Buy Dip ${order.buyDipPercent}%` : '\u{1F4B8} Set Buy Dip',
+    `magicbundle:set:buy_dip:${order.id}`,
+  );
+  keyboard.row();
+  keyboard.text(
+    order.sellOnDevSell ? '\u2705 Creator Sell Shield: On' : '\u274C Creator Sell Shield: Off',
+    `magicbundle:set:sell_on_dev_sell:${order.id}`,
+  );
+  keyboard.row();
+  keyboard.text(
+    Array.isArray(order.splitWallets) && order.splitWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)
+      ? '\u{1F4BC} Add Wallets To Buy / Sell'
+      : '\u{1F512} Add Wallets To Buy / Sell',
+    Array.isArray(order.splitWallets) && order.splitWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)
+      ? `magicbundle:add_to_trading:${order.id}`
+      : 'magicbundle:locked:add_to_trading',
+  );
+  keyboard.row();
+  keyboard.text(
+    magicBundleCanStart(order)
+      ? (order.automationEnabled ? '\u23F9\uFE0F Stop Protection' : '\u25B6\uFE0F Start Protection')
+      : '\u{1F512} Start Protection',
+    magicBundleCanStart(order) ? `magicbundle:toggle:${order.id}` : 'magicbundle:locked:toggle',
+  );
+  keyboard.row();
+
+  if (order.archivedAt) {
+    keyboard.text('\u267B\uFE0F Restore', `magicbundle:restore:${order.id}`);
+    keyboard.text(
+      order.deleteConfirmations >= 1 ? '\u{1F6A8} Confirm Delete' : '\u{1F5D1}\uFE0F Delete',
+      `magicbundle:delete:${order.id}`,
+    );
+    keyboard.row();
+    keyboard.text('\u2B05\uFE0F Back', 'nav:magic_bundle_archive');
+  } else {
+    keyboard.text('\u{1F5C4}\uFE0F Archive', `magicbundle:archive:${order.id}`);
+    keyboard.row();
+    keyboard.text('\u2B05\uFE0F Back', 'nav:magic_bundle');
+  }
+
+  keyboard.text('\u{1F3E0} Home', 'nav:home');
+  keyboard.row();
+  keyboard.text('\u{1F504} Refresh', 'refresh:magic_bundle_editor');
+  return keyboard;
+};
+
 buySellText = function buySellText(user) {
   const tradingDesk = normalizeTradingDesk(user.tradingDesk);
   const activeWallet = getActiveTradingWallet(user);
@@ -9619,18 +9881,18 @@ buySellText = function buySellText(user) {
     '',
     MENU_DIVIDER,
     '\u2728 *Desk Overview*',
-    `• Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
-    `• Wallet address: ${activeWallet ? `\`${activeWallet.address}\`` : 'Add or generate a wallet first'}`,
-    `• Wallet count: *${tradingDesk.wallets.length}*`,
-    `• Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None selected'}*`,
-    `• Quick trade CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
+    `â€¢ Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
+    `â€¢ Wallet address: ${activeWallet ? `\`${activeWallet.address}\`` : 'Add or generate a wallet first'}`,
+    `â€¢ Wallet count: *${tradingDesk.wallets.length}*`,
+    `â€¢ Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None selected'}*`,
+    `â€¢ Quick trade CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
     '',
     '\u{1F4CA} *What This Menu Is For*',
-    '• Quick token buy / sell flow',
-    '• Wallet import and wallet generation',
-    '• Bundle selection for multi-wallet execution',
-    '• Limit-order and copy-trading control panels',
-    `• Supported trade routes use a *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* handling fee per executed trade`,
+    'â€¢ Quick token buy / sell flow',
+    'â€¢ Wallet import and wallet generation',
+    'â€¢ Bundle selection for multi-wallet execution',
+    'â€¢ Limit-order and copy-trading control panels',
+    `â€¢ Supported trade routes use a *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* handling fee per executed trade`,
     '',
     '\u26A0\uFE0F *Hot-Wallet Warning*',
     'Any wallet imported here should be treated like a live trading wallet with real funds.',
@@ -9647,10 +9909,10 @@ buySellQuickText = function buySellQuickText(user) {
     '',
     'Paste a token CA to get this desk ready for fast trading.',
     '',
-    `• Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
-    `• Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
-    `• Wallet ready: *${activeWallet ? 'Yes' : 'No'}*`,
-    `• Handling fee: *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per executed trade`,
+    `â€¢ Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
+    `â€¢ Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
+    `â€¢ Wallet ready: *${activeWallet ? 'Yes' : 'No'}*`,
+    `â€¢ Handling fee: *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per executed trade`,
     '',
     'Use this desk to keep your active wallet, token CA, and bundle selection organized for trading.',
     ...(tradingDesk.awaitingField ? ['', promptForBuySellField(tradingDesk.awaitingField)] : []),
@@ -9666,10 +9928,10 @@ buySellLimitText = function buySellLimitText() {
     `Handling fee: *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per executed trade.`,
     '',
     'Professional trading bots typically let you:',
-    '• place limit buys below current price',
-    '• place take-profit sells above current price',
-    '• place stop-loss sells below current price',
-    '• choose a validity window for each order',
+    'â€¢ place limit buys below current price',
+    'â€¢ place take-profit sells above current price',
+    'â€¢ place stop-loss sells below current price',
+    'â€¢ choose a validity window for each order',
     '',
     'Use this menu as the control center for structured entries, profit targets, and downside protection.',
   ].join('\n');
@@ -9684,11 +9946,11 @@ buySellCopyText = function buySellCopyText() {
     `Handling fee: *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per executed trade.`,
     '',
     'Professional copy-trade flows usually include:',
-    '• wallet to follow',
-    '• buy amount rules',
-    '• sell matching rules',
-    '• stop-loss / take-profit controls',
-    '• whitelist / blacklist safety filters',
+    'â€¢ wallet to follow',
+    'â€¢ buy amount rules',
+    'â€¢ sell matching rules',
+    'â€¢ stop-loss / take-profit controls',
+    'â€¢ whitelist / blacklist safety filters',
     '',
     'Use this menu as the control center for wallet-following rules, sizing, and risk controls.',
   ].join('\n');
@@ -9705,18 +9967,18 @@ buySellText = function buySellText(user) {
     '',
     MENU_DIVIDER,
     '\u2728 *Desk Overview*',
-    `• Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
-    `• Wallet address: ${activeWallet ? `\`${activeWallet.address}\`` : 'Add or generate a wallet first'}`,
-    `• Wallet count: *${tradingDesk.wallets.length}*`,
-    `• Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None selected'}*`,
-    `• Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
+    `â€¢ Active wallet: *${activeWallet ? activeWallet.label : 'Not set'}*`,
+    `â€¢ Wallet address: ${activeWallet ? `\`${activeWallet.address}\`` : 'Add or generate a wallet first'}`,
+    `â€¢ Wallet count: *${tradingDesk.wallets.length}*`,
+    `â€¢ Selected bundle: *${selectedBundle ? (selectedBundle.tokenName || selectedBundle.id) : 'None selected'}*`,
+    `â€¢ Token CA: ${tradingDesk.quickTradeMintAddress ? `\`${tradingDesk.quickTradeMintAddress}\`` : '*Not set*'}`,
     '',
     '\u{1F4CA} *What This Menu Is For*',
-    '• Token CA setup for trading-ready wallets',
-    '• Wallet import and wallet generation',
-    '• Bundle selection for multi-wallet execution',
-    '• Active-wallet management from one desk',
-    `• Supported trade routes use a *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* handling fee per executed trade`,
+    'â€¢ Token CA setup for trading-ready wallets',
+    'â€¢ Wallet import and wallet generation',
+    'â€¢ Bundle selection for multi-wallet execution',
+    'â€¢ Active-wallet management from one desk',
+    `â€¢ Supported trade routes use a *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* handling fee per executed trade`,
     '',
     '\u26A0\uFE0F *Hot-Wallet Warning*',
     'Any wallet imported here should be treated like a live trading wallet with real funds.',
@@ -9740,12 +10002,12 @@ homeText = function homeText() {
     '',
     MENU_DIVIDER,
     '\u{1F680} *Supported Venues*',
-    'Raydium • PumpSwap • Meteora • Pumpfun • Meteora DBC • Bags • LetsBonk • LaunchLab',
+    'Raydium â€¢ PumpSwap â€¢ Meteora â€¢ Pumpfun â€¢ Meteora DBC â€¢ Bags â€¢ LetsBonk â€¢ LaunchLab',
     '',
-    '\u{1F4CA} Plans from 1 SOL • \u{1F6E1}\uFE0F Professional execution • \u{1F381} Free trial available',
-    `\u{1F4B8} Our handled trade routes use *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per trade, which is roughly half the 1% fee many major Telegram bots advertise`,
+    '\u{1F4CA} Plans from 1 SOL â€¢ \u{1F6E1}\uFE0F Professional execution â€¢ \u{1F381} Free trial available',
+    `\u{1F4B8} Our handled trade routes use *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per trade, lower than every competitor we track, and net platform profit is routed 50% to treasury, 25% to buyback + burn, and 25% to the SOL rewards vault`,
     `\u{1F91D} Need help? @${SUPPORT_USERNAME}`,
-    '\u{1F4AC} Community chat: @wizard_toolz',
+    '\u{1F4AC} Community chat: @wizardtoolz',
     '\u{1F514} Alerts channel: @wizardtoolz_alerts',
     '',
     'Ready? Choose a service below.',
@@ -9763,19 +10025,19 @@ burnAgentEditorText = function burnAgentEditorText(user, balanceLamports = null)
     '\u26A0\uFE0F If you paste a private key here, treat it as a live hot wallet.',
     '',
     '\u{1F4CB} *Agent Overview*',
-    `• Agent ID: \`${agent.id}\``,
-    `• Speed: *${burnAgentSpeedLabel(agent.speed)}*`,
-    `• Status: *${agent.automationEnabled ? 'Running' : 'Stopped'}*`,
-    `• Wallet mode: *${burnAgentWalletModeLabel(agent.walletMode)}*`,
-    `• Token name: *${agent.tokenName || 'Not set'}*`,
+    `â€¢ Agent ID: \`${agent.id}\``,
+    `â€¢ Speed: *${burnAgentSpeedLabel(agent.speed)}*`,
+    `â€¢ Status: *${agent.automationEnabled ? 'Running' : 'Stopped'}*`,
+    `â€¢ Wallet mode: *${burnAgentWalletModeLabel(agent.walletMode)}*`,
+    `â€¢ Token name: *${agent.tokenName || 'Not set'}*`,
   ];
 
   if (burnAgentNeedsWalletChoice(user)) {
     lines.push(
       '',
       '\u{1F511} *Wallet Setup*',
-      '• *Generate Wallet*: we create a wallet for you, and you must mint the coin from that wallet.',
-      "• *Provide My Own*: you paste the private key for the creator wallet you already control.",
+      'â€¢ *Generate Wallet*: we create a wallet for you, and you must mint the coin from that wallet.',
+      "â€¢ *Provide My Own*: you paste the private key for the creator wallet you already control.",
       '',
       'Choose one of the options below to continue.',
     );
@@ -9785,63 +10047,63 @@ burnAgentEditorText = function burnAgentEditorText(user, balanceLamports = null)
   lines.push(
     '',
     '\u{1F4B3} *Agent Wallet*',
-    `• Address: \`${agent.walletAddress || 'Not ready'}\``,
-    `• Balance: *${Number.isInteger(balanceLamports) ? `${formatSolAmountFromLamports(balanceLamports)} SOL` : 'Unavailable'}*`,
+    `â€¢ Address: \`${agent.walletAddress || 'Not ready'}\``,
+    `â€¢ Balance: *${Number.isInteger(balanceLamports) ? `${formatSolAmountFromLamports(balanceLamports)} SOL` : 'Unavailable'}*`,
   );
 
   if (agent.speed === 'lightning' && agent.walletMode === 'generated') {
-    lines.push('• Mint the coin with this exact wallet.');
-    lines.push('• Withdraw any SOL before regenerating this wallet. Regeneration is blocked until the balance is zero.');
+    lines.push('â€¢ Mint the coin with this exact wallet.');
+    lines.push('â€¢ Withdraw any SOL before regenerating this wallet. Regeneration is blocked until the balance is zero.');
   } else if (agent.speed === 'lightning' && agent.walletMode === 'provided') {
     lines.push(agent.walletAddress
-      ? '• This agent can claim creator rewards directly because it holds the creator wallet key.'
-      : '• Add the creator wallet private key you mint with.');
+      ? 'â€¢ This agent can claim creator rewards directly because it holds the creator wallet key.'
+      : 'â€¢ Add the creator wallet private key you mint with.');
   } else if (agent.speed === 'normal') {
-    lines.push('• Normal mode uses a managed wallet. You route a chosen creator-reward share to this wallet on Pump.fun.');
+    lines.push('â€¢ Normal mode uses a managed wallet. You route a chosen creator-reward share to this wallet on Pump.fun.');
   }
 
   if (burnAgentHasStoredPrivateKey(agent)) {
-    lines.push(`• Stored private key: ${burnAgentPrivateKeyText(agent)}`);
+    lines.push(`â€¢ Stored private key: ${burnAgentPrivateKeyText(agent)}`);
   }
 
   lines.push(
     '',
     '\u2699\uFE0F *Strategy*',
-    `• Mint: ${agent.mintAddress ? `\`${agent.mintAddress}\`` : 'Not set'}`,
+    `â€¢ Mint: ${agent.mintAddress ? `\`${agent.mintAddress}\`` : 'Not set'}`,
   );
 
   if (isNormalBurnAgent(agent)) {
-    lines.push('• Burn share: *100% of the rewards routed to this agent*');
+    lines.push('â€¢ Burn share: *100% of the rewards routed to this agent*');
   } else {
     lines.push(
-      `• Treasury wallet: ${agent.treasuryAddress ? `\`${agent.treasuryAddress}\`` : 'Not set'}`,
-      `• Burn share: ${Number.isInteger(agent.burnPercent) ? `*${agent.burnPercent}%*` : 'Not set'}`,
-      `• Treasury share: ${Number.isInteger(agent.treasuryPercent) ? `*${agent.treasuryPercent}%*` : 'Not set'}`,
+      `â€¢ Treasury wallet: ${agent.treasuryAddress ? `\`${agent.treasuryAddress}\`` : 'Not set'}`,
+      `â€¢ Burn share: ${Number.isInteger(agent.burnPercent) ? `*${agent.burnPercent}%*` : 'Not set'}`,
+      `â€¢ Treasury share: ${Number.isInteger(agent.treasuryPercent) ? `*${agent.treasuryPercent}%*` : 'Not set'}`,
     );
   }
 
   lines.push(
     '',
     '\u{1F4C8} *Burn Stats*',
-    `• Claim checks: *${runtime.totalClaimChecks || 0}*`,
-    `• Claims completed: *${runtime.totalClaimCount || 0}*`,
-    `• Total claimed: *${formatSolAmountFromLamports(runtime.totalClaimedLamports || 0)} SOL*`,
-    `• Treasury payouts: *${runtime.totalTreasuryTransferCount || 0}*`,
-    `• Treasury sent: *${formatSolAmountFromLamports(runtime.totalTreasuryLamportsSent || 0)} SOL*`,
-    `• Buybacks executed: *${runtime.totalBuybackCount || 0}*`,
-    `• Buyback SOL used: *${formatSolAmountFromLamports(runtime.totalBuybackLamports || 0)} SOL*`,
-    `• Burns executed: *${runtime.totalBurnCount || 0}*`,
-    `• Raw amount burned: *${runtime.totalBurnedRawAmount || '0'}*`,
+    `â€¢ Claim checks: *${runtime.totalClaimChecks || 0}*`,
+    `â€¢ Claims completed: *${runtime.totalClaimCount || 0}*`,
+    `â€¢ Total claimed: *${formatSolAmountFromLamports(runtime.totalClaimedLamports || 0)} SOL*`,
+    `â€¢ Treasury payouts: *${runtime.totalTreasuryTransferCount || 0}*`,
+    `â€¢ Treasury sent: *${formatSolAmountFromLamports(runtime.totalTreasuryLamportsSent || 0)} SOL*`,
+    `â€¢ Buybacks executed: *${runtime.totalBuybackCount || 0}*`,
+    `â€¢ Buyback SOL used: *${formatSolAmountFromLamports(runtime.totalBuybackLamports || 0)} SOL*`,
+    `â€¢ Burns executed: *${runtime.totalBurnCount || 0}*`,
+    `â€¢ Raw amount burned: *${runtime.totalBurnedRawAmount || '0'}*`,
   );
 
   if (runtime.lastVaultLamports) {
-    lines.push(`• Current claimable rewards: *${formatSolAmountFromLamports(Number(runtime.lastVaultLamports) || 0)} SOL*`);
+    lines.push(`â€¢ Current claimable rewards: *${formatSolAmountFromLamports(Number(runtime.lastVaultLamports) || 0)} SOL*`);
   }
   if (runtime.lastCheckedAt) {
-    lines.push(`• Last runtime check: ${formatTimestamp(runtime.lastCheckedAt)}`);
+    lines.push(`â€¢ Last runtime check: ${formatTimestamp(runtime.lastCheckedAt)}`);
   }
   if (runtime.lastBuybackMode) {
-    lines.push(`• Last buyback route: *${runtime.lastBuybackMode}*`);
+    lines.push(`â€¢ Last buyback route: *${runtime.lastBuybackMode}*`);
   }
 
   if (recentLogs.length > 0) {
@@ -10031,43 +10293,43 @@ magicSellEditorText = function magicSellEditorText(user) {
     'Smart sell automation that activates only after your chosen market cap is reached.',
     '',
     '\u{1F4CB} *Setup*',
-    `• Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
-    `• Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
-    `• Status: *${magicSellStatusLabel(order)}*`,
-    `• Target MC: *${Number.isFinite(order.targetMarketCapUsd) ? formatUsdCompact(order.targetMarketCapUsd) : 'Not set'}*`,
-    `• Sell rule: *${order.sellPercent || MAGIC_SELL_SELL_PERCENT}% of each qualifying buy*`,
-    `• Minimum buy: *${formatSolAmountFromLamports(order.minimumBuyLamports || MAGIC_SELL_MIN_BUY_LAMPORTS)} SOL*`,
+    `â€¢ Token: ${order.tokenName ? `*${order.tokenName}*` : '*Not set*'}`,
+    `â€¢ Mint: ${order.mintAddress ? `\`${order.mintAddress}\`` : '*Not set*'}`,
+    `â€¢ Status: *${magicSellStatusLabel(order)}*`,
+    `â€¢ Target MC: *${Number.isFinite(order.targetMarketCapUsd) ? formatUsdCompact(order.targetMarketCapUsd) : 'Not set'}*`,
+    `â€¢ Sell rule: *${order.sellPercent || MAGIC_SELL_SELL_PERCENT}% of each qualifying buy*`,
+    `â€¢ Minimum buy: *${formatSolAmountFromLamports(order.minimumBuyLamports || MAGIC_SELL_MIN_BUY_LAMPORTS)} SOL*`,
     '',
     '\u{1F4B3} *Deposit Wallet*',
     `\`${order.walletAddress}\``,
-    `• SOL on deposit wallet: *${order.currentSol || '0'} SOL*`,
-    `• Token inventory: *${order.currentTokenAmountDisplay || '0'}*`,
-    `• Stored private key: ${magicSellPrivateKeyText(order)}`,
+    `â€¢ SOL on deposit wallet: *${order.currentSol || '0'} SOL*`,
+    `â€¢ Token inventory: *${order.currentTokenAmountDisplay || '0'}*`,
+    `â€¢ Stored private key: ${magicSellPrivateKeyText(order)}`,
     '',
     '\u{1F45B} *Seller Wallet Pool*',
-    `• Wallets: *${order.sellerWalletCount || MAGIC_SELL_DEFAULT_SELLER_WALLET_COUNT}*`,
-    `• Seller SOL total: *${formatSolAmountFromLamports(totalSellerLamports)} SOL*`,
-    `• Recommended gas buffer: *${formatSolAmountFromLamports(order.recommendedGasLamports || 0)} SOL*`,
-    ...previewWallets.map((wallet, index) => `• #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` • ${wallet.currentSol || '0'} SOL • ${wallet.currentTokenAmountDisplay || '0'} tokens`),
+    `â€¢ Wallets: *${order.sellerWalletCount || MAGIC_SELL_DEFAULT_SELLER_WALLET_COUNT}*`,
+    `â€¢ Seller SOL total: *${formatSolAmountFromLamports(totalSellerLamports)} SOL*`,
+    `â€¢ Recommended gas buffer: *${formatSolAmountFromLamports(order.recommendedGasLamports || 0)} SOL*`,
+    ...previewWallets.map((wallet, index) => `â€¢ #${index + 1} \`${wallet.address.slice(0, 4)}...${wallet.address.slice(-4)}\` â€¢ ${wallet.currentSol || '0'} SOL â€¢ ${wallet.currentTokenAmountDisplay || '0'} tokens`),
     ...(order.sellerWallets.length > previewWallets.length
-      ? [`• ...and *${order.sellerWallets.length - previewWallets.length}* more seller wallets`] : []),
+      ? [`â€¢ ...and *${order.sellerWallets.length - previewWallets.length}* more seller wallets`] : []),
     '',
     '\u{1F6E1}\uFE0F *Whitelist*',
     whitelistPreview.length > 0
-      ? `• ${whitelistPreview.map((item) => `\`${item.slice(0, 4)}...${item.slice(-4)}\``).join(', ')}`
-      : '• No wallets whitelisted',
+      ? `â€¢ ${whitelistPreview.map((item) => `\`${item.slice(0, 4)}...${item.slice(-4)}\``).join(', ')}`
+      : 'â€¢ No wallets whitelisted',
     ...(order.whitelistWallets.length > whitelistPreview.length
-      ? [`• ...plus *${order.whitelistWallets.length - whitelistPreview.length}* more`] : []),
+      ? [`â€¢ ...plus *${order.whitelistWallets.length - whitelistPreview.length}* more`] : []),
     '',
     '\u{1F4C8} *Live Stats*',
-    `• Current MC: *${Number.isFinite(order.currentMarketCapUsd) ? formatUsdCompact(order.currentMarketCapUsd) : 'Waiting for market data'}*`,
-    `• Phase: *${order.marketPhase || 'Unknown'}*`,
-    `• Qualifying buys seen: *${order.stats?.triggerCount || 0}*`,
-    `• Sells executed: *${order.stats?.sellCount || 0}*`,
-    `• Observed buy flow: *${formatSolAmountFromLamports(order.stats?.totalObservedBuyLamports || 0)} SOL*`,
-    `• Sell target flow: *${formatSolAmountFromLamports(order.stats?.totalTargetSellLamports || 0)} SOL*`,
-    ...(order.lastBalanceCheckAt ? [`• Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}`] : []),
-    ...(order.lastError ? [`• Last error: \`${order.lastError}\``] : []),
+    `â€¢ Current MC: *${Number.isFinite(order.currentMarketCapUsd) ? formatUsdCompact(order.currentMarketCapUsd) : 'Waiting for market data'}*`,
+    `â€¢ Phase: *${order.marketPhase || 'Unknown'}*`,
+    `â€¢ Qualifying buys seen: *${order.stats?.triggerCount || 0}*`,
+    `â€¢ Sells executed: *${order.stats?.sellCount || 0}*`,
+    `â€¢ Observed buy flow: *${formatSolAmountFromLamports(order.stats?.totalObservedBuyLamports || 0)} SOL*`,
+    `â€¢ Sell target flow: *${formatSolAmountFromLamports(order.stats?.totalTargetSellLamports || 0)} SOL*`,
+    ...(order.lastBalanceCheckAt ? [`â€¢ Last checked: ${formatTimestamp(order.lastBalanceCheckAt)}`] : []),
+    ...(order.lastError ? [`â€¢ Last error: \`${order.lastError}\``] : []),
     '',
     order.awaitingField
       ? promptForMagicSellField(order.awaitingField)
@@ -10133,6 +10395,83 @@ function parsePercentInput(value, label) {
 function decodeBurnAgentWallet(secretKeyB64) {
   const bytes = Buffer.from(secretKeyB64, 'base64');
   return Keypair.fromSecretKey(Uint8Array.from(bytes));
+}
+
+function decodeRewardsVaultSigner() {
+  const configuredAddress = process.env.WIZARD_REWARDS_VAULT_ADDRESS?.trim() || null;
+  const candidateSecrets = [
+    process.env.WIZARD_REWARDS_VAULT_SECRET_KEY_B64?.trim(),
+    process.env.WIZARD_REWARDS_VAULT_SECRET_KEY?.trim(),
+    process.env.DEV_WALLET_SECRET_KEY_B64?.trim(),
+    process.env.DEV_WALLET_SECRET_KEY?.trim(),
+  ].filter(Boolean);
+
+  if (candidateSecrets.length === 0) {
+    throw new Error('Rewards vault signer is not configured yet.');
+  }
+
+  for (const secret of candidateSecrets) {
+    try {
+      const signer = Keypair.fromSecretKey(Uint8Array.from(parseSecretKeyBytes(secret)));
+      const address = signer.publicKey.toBase58();
+      if (!configuredAddress || address === configuredAddress) {
+        return signer;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  throw new Error('Rewards vault signer does not match WIZARD_REWARDS_VAULT_ADDRESS.');
+}
+
+async function sendStakingClaimRewards(user) {
+  const state = normalizeStakingState(user.staking);
+  if (!state.walletAddress) {
+    throw new Error('Link a staking wallet first.');
+  }
+
+  if (state.claimableLamports < state.claimThresholdLamports) {
+    throw new Error(`Minimum claim is ${formatSolAmountFromLamports(state.claimThresholdLamports)} SOL.`);
+  }
+
+  const signer = decodeRewardsVaultSigner();
+  const destination = new PublicKey(state.walletAddress);
+  const balanceLamports = await chainConnection.getBalance(signer.publicKey, 'confirmed');
+  const availableLamports = Math.max(0, balanceLamports - STAKING_REWARDS_VAULT_FEE_RESERVE_LAMPORTS);
+
+  if (availableLamports < state.claimableLamports) {
+    throw new Error('Rewards vault does not have enough SOL for this claim yet.');
+  }
+
+  const latestBlockhash = await chainConnection.getLatestBlockhash('confirmed');
+  const transaction = new Transaction({
+    feePayer: signer.publicKey,
+    recentBlockhash: latestBlockhash.blockhash,
+    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+  }).add(
+    SystemProgram.transfer({
+      fromPubkey: signer.publicKey,
+      toPubkey: destination,
+      lamports: state.claimableLamports,
+    }),
+  );
+
+  const signature = await chainConnection.sendTransaction(transaction, [signer], {
+    preflightCommitment: 'confirmed',
+    maxRetries: 3,
+  });
+
+  await chainConnection.confirmTransaction({
+    signature,
+    blockhash: latestBlockhash.blockhash,
+    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+  }, 'confirmed');
+
+  return {
+    signature,
+    claimedLamports: state.claimableLamports,
+  };
 }
 
 async function getBurnAgentBalanceLamports(agent) {
@@ -10595,10 +10934,10 @@ async function refreshSniperWizard(userId) {
     const workerWallets = Array.isArray(order.workerWallets)
       ? await Promise.all(order.workerWallets.map(async (wallet) => {
         if (!wallet.address) {
-          return normalizeLaunchBuyBuyerWalletRecord(wallet);
+          return normalizeLaunchBuyBuyerWallet(wallet);
         }
         const lamports = await getWalletBalance(wallet.address).catch(() => wallet.currentLamports || 0);
-        return normalizeLaunchBuyBuyerWalletRecord({
+        return normalizeLaunchBuyBuyerWallet({
           ...wallet,
           currentLamports: lamports,
           currentSol: formatSolAmountFromLamports(lamports),
@@ -10656,8 +10995,8 @@ function makeXFollowersKeyboard(user) {
       if (!pkg) return;
       const icon = pkg.type === 'non_drop' ? '\u{1F451}' : '\u267B\uFE0F';
       const label = selectedKey === key
-        ? `\u2705 ${icon} ${pkg.followers} • $${pkg.usdPrice.toFixed(2)}`
-        : `${icon} ${pkg.followers} • $${pkg.usdPrice.toFixed(2)}`;
+        ? `\u2705 ${icon} ${pkg.followers} â€¢ $${pkg.usdPrice.toFixed(2)}`
+        : `${icon} ${pkg.followers} â€¢ $${pkg.usdPrice.toFixed(2)}`;
       keyboard.text(label, `xfollowers:package:${key}`);
     });
     keyboard.row();
@@ -10743,6 +11082,103 @@ function xFollowersText(user) {
   return lines.join('\n');
 }
 
+function stakingStatusLabel(state) {
+  if ((state.claimableLamports || 0) >= state.claimThresholdLamports) {
+    return 'Claim Ready';
+  }
+  if (state.walletAddress) {
+    return 'Tracking';
+  }
+  return 'Setup';
+}
+
+function makeStakingKeyboard(user) {
+  const state = normalizeStakingState(user.staking);
+  const keyboard = new InlineKeyboard();
+
+  keyboard.text(
+    state.walletAddress ? '\u2705 Use Active Buy / Sell Wallet' : '\u{1F517} Link Active Buy / Sell Wallet',
+    'staking:link_active_wallet',
+  );
+  keyboard.row();
+  keyboard.text('\u{1F4B8} Claim Rewards', 'staking:claim');
+  keyboard.text('\u23F3 Request Unstake', 'staking:request_unstake');
+  keyboard.row();
+  keyboard.text('\u{1F9E0} How Rewards Build', 'staking:explain_epoch');
+  keyboard.text('\u2139\uFE0F Help', 'nav:help_staking');
+  keyboard.row();
+  keyboard.text('\u2B05\uFE0F Back', 'nav:home');
+  keyboard.text('\u{1F3E0} Home', 'nav:home');
+  keyboard.row();
+  keyboard.text('\u{1F504} Refresh', 'refresh:staking');
+  return keyboard;
+}
+
+function stakingText(user) {
+  const state = normalizeStakingState(user.staking);
+  const activeWallet = getActiveTradingWallet(user);
+  const lines = [
+    '\u{1F4B0} *Staking*',
+    '',
+    'Hold *WIZARD TOOLZ*, let time do the work, and manually claim *SOL* rewards from this bot when your balance is ready.',
+    '',
+    MENU_DIVIDER,
+    '\u2728 *What This Product Will Do*',
+    '- Link the wallet you want the bot to track for WIZARD TOOLZ rewards',
+    '- Rewards are paid in *SOL* from platform fees and creator rewards',
+    '- Claims are *manual* from Telegram so you stay in control',
+    `- Claims only unlock once at least *${formatSolAmountFromLamports(state.claimThresholdLamports)} SOL* is claimable`,
+    `- Rewards start building immediately, but the first *${formatDayCountLabel(STAKING_EARLY_WEIGHT_DAYS)}* count at a lighter weight`,
+    `- Normal unstake uses a *${formatDayCountLabel(STAKING_UNSTAKE_COOLDOWN_DAYS)}* cooldown in the hard-staking flow`,
+    '',
+    '\u{1F4CB} *Current Setup*',
+    `- Status: *${stakingStatusLabel(state)}*`,
+    `- Rewards asset: *${state.rewardsAsset}*`,
+    `- Manual claim only: *${state.manualClaimOnly ? 'Yes' : 'No'}*`,
+    `- Linked wallet: ${state.walletAddress ? `\`${state.walletAddress}\`` : '*Not linked yet*'}`,
+    `- Active Buy / Sell wallet: ${activeWallet?.address ? `\`${activeWallet.address}\`` : '*None selected*'}`,
+    `- Total tracked: *${state.totalStakedDisplay} WIZARD TOOLZ*`,
+    `- Rewards weight: *${state.currentWeightLabel}*`,
+    `- Claimable now: *${formatSolAmountFromLamports(state.claimableLamports)} SOL*`,
+    `- Lifetime claimed: *${formatSolAmountFromLamports(state.totalClaimedLamports)} SOL*`,
+  ];
+
+  if (state.trackingStartedAt) {
+    lines.push(`- Tracking since: ${formatTimestamp(state.trackingStartedAt)}`);
+  }
+  if (state.lastBalanceSyncedAt) {
+    lines.push(`- Last balance sync: ${formatTimestamp(state.lastBalanceSyncedAt)}`);
+  }
+  if (state.lastRewardsAllocatedAt) {
+    lines.push(`- Last rewards update: ${formatTimestamp(state.lastRewardsAllocatedAt)}`);
+  }
+
+  if (state.lastClaimedAt) {
+    lines.push(`- Last manual claim: ${formatTimestamp(state.lastClaimedAt)} (${formatSolAmountFromLamports(state.lastClaimedLamports)} SOL)`);
+    if (state.lastClaimSignature) {
+      lines.push(`- Last claim tx: \`${state.lastClaimSignature}\``);
+    }
+  }
+
+  lines.push('');
+  lines.push('\u{1F9E0} *Simple Version*');
+  lines.push('- Bigger stake + longer time = bigger share of the SOL reward pool');
+  lines.push('- If your claimable amount is under the minimum, it waits and keeps building');
+  lines.push('- Nothing auto-claims behind your back');
+
+  if (!state.walletAddress && activeWallet?.address) {
+    lines.push('');
+    lines.push('Tip: tap *Link Active Buy / Sell Wallet* to use the wallet you already selected in the trading desk.');
+  }
+
+  if (state.lastError) {
+    lines.push('');
+    lines.push(`Last note: \`${state.lastError}\``);
+  }
+
+  return lines.join('\n');
+}
+
 function makeVanityWalletKeyboard(user) {
   const state = normalizeVanityWalletState(user.vanityWallet);
   const keyboard = new InlineKeyboard();
@@ -10793,9 +11229,11 @@ function vanityWalletText(user) {
     MENU_DIVIDER,
     '\u2728 *What This Tool Does*',
     '- Choose whether the address should start with or end with your pattern',
+    '- Example: start with `WIZ` or end with `TOOL`',
     `- Shared Render generation is capped at *${VANITY_WALLET_MAX_PATTERN_LENGTH} characters* so it stays reliable`,
     '- Pay the fixed service fee shown below',
     '- Once payment is matched, the bot brute-forces the wallet in the background and delivers the key here',
+    '- The private key stays hidden by default until you reveal it inside your own chat',
     '',
     '\u{1F4CB} *Current Setup*',
     `- Status: *${vanityWalletStatusLabel(user)}*`,
@@ -10925,7 +11363,7 @@ function subscriptionsAccountsText() {
   return [
     '\u{1F4BC} *Subscriptions + Accounts*',
     '',
-    'Need premium subscriptions, social accounts, or streaming/media access? Choose the category below and message support for pricing and availability.',
+    'Need premium subscriptions, social accounts, or related digital services? Choose the category below and message support for pricing and availability.',
     '',
     MENU_DIVIDER,
     '\u2728 *Subscriptions*',
@@ -10937,10 +11375,8 @@ function subscriptionsAccountsText() {
     '- Canva',
     '- Adobe / Adobe Express',
     '',
-    '\u{1F511} *Accounts & Media*',
-    '- Instagram, TikTok, X, Telegram, Picsart',
-    '- Netflix, Spotify, Apple TV+, Paramount+',
-    '- IPTV providers, Deezer, VBTV, Megogo',
+    '\u{1F511} *Accounts*',
+    '- Instagram, TikTok, X, Telegram, Reddit, Picsart',
     '',
       `Message support at @${SUPPORT_USERNAME} for current pricing, stock, and delivery timing.`,
   ].join('\n');
@@ -10994,19 +11430,8 @@ function makeAccountsCatalogKeyboard() {
     .url('\u{1F426} X', `https://t.me/${SUPPORT_USERNAME}`)
     .url('\u{1F4AC} Telegram', `https://t.me/${SUPPORT_USERNAME}`)
     .row()
+    .url('\u{1F4F0} Reddit', `https://t.me/${SUPPORT_USERNAME}`)
     .url('\u{1F5BC}\uFE0F Picsart', `https://t.me/${SUPPORT_USERNAME}`)
-    .url('\u{1F3AC} Netflix', `https://t.me/${SUPPORT_USERNAME}`)
-    .row()
-    .url('\u{1F3B6} Spotify', `https://t.me/${SUPPORT_USERNAME}`)
-    .url('\u{1F34E} Apple TV+', `https://t.me/${SUPPORT_USERNAME}`)
-    .row()
-    .url('\u{1F3A5} Paramount+', `https://t.me/${SUPPORT_USERNAME}`)
-    .url('\u{1F4FA} IPTV', `https://t.me/${SUPPORT_USERNAME}`)
-    .row()
-    .url('\u{1F3B7} Deezer', `https://t.me/${SUPPORT_USERNAME}`)
-    .url('\u26BD VBTV', `https://t.me/${SUPPORT_USERNAME}`)
-    .row()
-    .url('\u{1F3AC} Megogo', `https://t.me/${SUPPORT_USERNAME}`)
     .row()
     .url('\u{1F91D} Contact Support', `https://t.me/${SUPPORT_USERNAME}`)
     .row()
@@ -11018,26 +11443,19 @@ function makeAccountsCatalogKeyboard() {
 
 function accountsCatalogText() {
   return [
-    '\u{1F511} *Accounts & Media*',
+    '\u{1F511} *Accounts*',
     '',
-    'Choose the account or media service you want, then message support for pricing and availability.',
+    'Choose the account service you want, then message support for pricing and availability.',
     '',
     MENU_DIVIDER,
     '- Instagram',
     '- TikTok',
     '- X',
     '- Telegram',
+    '- Reddit',
     '- Picsart',
-    '- Netflix',
-    '- Spotify',
-    '- Apple TV+',
-    '- Paramount+',
-    '- IPTV providers',
-    '- Deezer',
-    '- VBTV',
-    '- Megogo',
     '',
-    `All account and media inquiries are handled manually through @${SUPPORT_USERNAME}.`,
+    `All account inquiries are handled manually through @${SUPPORT_USERNAME}.`,
   ].join('\n');
 }
 
@@ -11247,7 +11665,7 @@ async function processLaunchBuyLogoUpload(ctx) {
   } catch (error) {
     await ctx.reply(
       [
-        `⚠️ ${String(error.message || error)}`,
+        `âš ï¸ ${String(error.message || error)}`,
         '',
         promptForLaunchBuyField('logo', order),
       ].join('\n'),
@@ -11356,7 +11774,7 @@ async function processResizerUpload(ctx) {
 
     await ctx.replyWithDocument(new InputFile(outputBuffer, preset.filename), {
       caption: [
-        `🖼️ ${preset.label} ready`,
+        `ðŸ–¼ï¸ ${preset.label} ready`,
         `${preset.width} x ${preset.height} PNG`,
         'You can send another image anytime with the same format, or switch formats below.',
       ].join('\n'),
@@ -11377,7 +11795,7 @@ async function processResizerUpload(ctx) {
 
     await ctx.reply(
       [
-        `⚠️ ${String(error.message || error)}`,
+        `âš ï¸ ${String(error.message || error)}`,
         '',
         resizerEditorText(updated),
       ].join('\n'),
@@ -11455,7 +11873,7 @@ async function editOrReplyMedia(ctx, route, text, keyboard) {
 }
 
 async function renderScreen(ctx, route, user) {
-  if (['home', 'amount', 'payment', 'confirm', 'status', 'help', 'help_reaction', 'help_volume', 'help_buy_sell', 'help_burn_agent', 'help_holder_booster', 'help_fomo_booster', 'help_magic_sell', 'help_magic_bundle', 'help_launch_buy', 'help_sniper_wizard', 'help_vanity_wallet', 'help_community_vision', 'help_wallet_tracker', 'help_x_followers', 'help_engagement', 'help_subscriptions_accounts', 'help_resizer', 'buy_sell', 'buy_sell_wallets', 'buy_sell_quick', 'buy_sell_limit', 'buy_sell_copy', 'volume', 'volume_organic', 'volume_archive', 'volume_bundled', 'volume_order', 'burn_agent', 'burn_agent_archive', 'burn_agent_editor', 'holder_booster', 'fomo_booster', 'magic_bundle', 'magic_bundle_archive', 'magic_bundle_editor', 'magic_sell', 'magic_sell_archive', 'magic_sell_editor', 'launch_buy', 'launch_buy_archive', 'launch_buy_editor', 'sniper_wizard', 'vanity_wallet', 'community_vision', 'community_vision_archive', 'community_vision_editor', 'wallet_tracker', 'wallet_tracker_archive', 'wallet_tracker_editor', 'x_followers', 'engagement', 'subscriptions_accounts', 'subscriptions_catalog', 'accounts_catalog', 'resizer'].includes(route)) {
+  if (['home', 'amount', 'payment', 'confirm', 'status', 'help', 'help_reaction', 'help_volume', 'help_buy_sell', 'help_burn_agent', 'help_holder_booster', 'help_fomo_booster', 'help_magic_sell', 'help_magic_bundle', 'help_launch_buy', 'help_sniper_wizard', 'help_staking', 'help_vanity_wallet', 'help_community_vision', 'help_wallet_tracker', 'help_x_followers', 'help_engagement', 'help_subscriptions_accounts', 'help_resizer', 'buy_sell', 'buy_sell_wallets', 'buy_sell_quick', 'buy_sell_limit', 'buy_sell_copy', 'volume', 'volume_organic', 'volume_archive', 'volume_bundled', 'volume_order', 'burn_agent', 'burn_agent_archive', 'burn_agent_editor', 'holder_booster', 'fomo_booster', 'magic_bundle', 'magic_bundle_archive', 'magic_bundle_editor', 'magic_sell', 'magic_sell_archive', 'magic_sell_editor', 'launch_buy', 'launch_buy_archive', 'launch_buy_editor', 'sniper_wizard', 'staking', 'vanity_wallet', 'community_vision', 'community_vision_archive', 'community_vision_editor', 'wallet_tracker', 'wallet_tracker_archive', 'wallet_tracker_editor', 'x_followers', 'engagement', 'subscriptions_accounts', 'subscriptions_catalog', 'accounts_catalog', 'resizer'].includes(route)) {
     await ensureSolPriceCache();
   }
 
@@ -11513,6 +11931,9 @@ async function renderScreen(ctx, route, user) {
       return;
     case 'help_sniper_wizard':
       await editOrReplyMedia(ctx, 'help', featureHelpText('sniper_wizard'), makeFeatureHelpKeyboard('nav:sniper_wizard', 'help_sniper_wizard'));
+      return;
+    case 'help_staking':
+      await editOrReplyMedia(ctx, 'help', featureHelpText('staking'), makeFeatureHelpKeyboard('nav:staking', 'help_staking'));
       return;
     case 'help_vanity_wallet':
       await editOrReplyMedia(ctx, 'help', featureHelpText('vanity_wallet'), makeFeatureHelpKeyboard('nav:vanity_wallet', 'help_vanity_wallet'));
@@ -11601,6 +12022,9 @@ async function renderScreen(ctx, route, user) {
       return;
     case 'sniper_wizard':
       await editOrReplyMedia(ctx, 'sniper_wizard', sniperWizardEditorText(user), makeSniperWizardKeyboard(user));
+      return;
+    case 'staking':
+      await editOrReplyMedia(ctx, 'staking', stakingText(user), makeStakingKeyboard(user));
       return;
     case 'vanity_wallet':
       await editOrReplyMedia(ctx, 'vanity_wallet', vanityWalletText(user), makeVanityWalletKeyboard(user));
@@ -12616,7 +13040,7 @@ async function announceReactionPurchaseLegacy(userId, user) {
     ? `https://solscan.io/tx/${encodeURIComponent(user.payment.matchedSignature)}`
     : null;
   const messageLines = [
-    'Ã¢Å“â€¦ <b>Bundle Purchase Confirmed</b>',
+    'ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ <b>Bundle Purchase Confirmed</b>',
     '',
     `<b>Bundle</b>: x${escapeHtml(user.selection.amount)} apples`,
     `<b>Profile</b>: ${escapeHtml(buttonDisplay(user.selection.button))}`,
@@ -12668,7 +13092,7 @@ async function announceReactionPurchaseToAlerts(userId, user) {
   return sendAlertsGroupAnnouncement({
     imagePath: SALES_BROADCAST_IMAGE_PATH,
     lines: [
-      '<b>🚀 Fresh Reaction Order Paid</b>',
+      '<b>ðŸš€ Fresh Reaction Order Paid</b>',
       '',
       `<b>Package</b>: ${escapeHtml(String(user.selection.amount))} reactions`,
       `<b>Reaction</b>: ${escapeHtml(buttonDisplay(user.selection.button))}`,
@@ -12698,7 +13122,7 @@ async function announceBurnAgentAttachedToAlerts(userId, agent) {
   return sendAlertsGroupAnnouncement({
     imagePath: BURN_AGENT_ALERT_IMAGE_PATH,
     lines: [
-      '<b>🔥 Burn Agent Attached</b>',
+      '<b>ðŸ”¥ Burn Agent Attached</b>',
       '',
       `<b>Token</b>: ${tokenLabel}`,
       `<b>Mint</b>: <code>${escapeHtml(agent.mintAddress)}</code>`,
@@ -12726,7 +13150,7 @@ async function announceXFollowersPurchase(userId, user) {
     ? `https://solscan.io/tx/${encodeURIComponent(user.xFollowers.payment.matchedSignature)}`
     : null;
   const messageLines = [
-    '<b>👥 X Followers Order Paid</b>',
+    '<b>ðŸ‘¥ X Followers Order Paid</b>',
     '',
     `<b>Package</b>: ${escapeHtml(pkg.label)}`,
     `<b>Delivery</b>: ${escapeHtml(pkg.promise)}`,
@@ -12768,7 +13192,7 @@ async function announceXFollowersPurchaseToAlerts(userId, user) {
   return sendAlertsGroupAnnouncement({
     imagePath: null,
     lines: [
-      '<b>👥 X Followers Order Paid</b>',
+      '<b>ðŸ‘¥ X Followers Order Paid</b>',
       '',
       `<b>Package</b>: ${escapeHtml(pkg.label)}`,
       `<b>Target</b>: ${escapeHtml(user.xFollowers.target || 'Not set')}`,
@@ -12798,7 +13222,7 @@ async function announceReactionPurchase(userId, user) {
     : null;
 
   const messageLines = [
-    '<b>🚀 Reaction Order Paid</b>',
+    '<b>ðŸš€ Reaction Order Paid</b>',
     '',
     `<b>Package</b>: ${escapeHtml(String(user.selection.amount))} reactions`,
     `<b>Profile</b>: ${escapeHtml(buttonDisplay(user.selection.button))}`,
@@ -13279,6 +13703,10 @@ bot.command('resizer', async (ctx) => {
   await handleSlashRoute(ctx, 'resizer');
 });
 
+bot.command('staking', async (ctx) => {
+  await handleSlashRoute(ctx, 'staking');
+});
+
 bot.command('help', async (ctx) => {
   await handleSlashRoute(ctx, 'help');
 });
@@ -13431,7 +13859,7 @@ bot.callbackQuery('nav:help', async (ctx) => {
   await renderScreen(ctx, 'help', user);
 });
 
-bot.callbackQuery(/^nav:help_(reaction|volume|buy_sell|burn_agent|holder_booster|fomo_booster|magic_sell|magic_bundle|launch_buy|sniper_wizard|vanity_wallet|community_vision|wallet_tracker|x_followers|engagement|subscriptions_accounts|resizer)$/, async (ctx) => {
+bot.callbackQuery(/^nav:help_(reaction|volume|buy_sell|burn_agent|holder_booster|fomo_booster|magic_sell|magic_bundle|launch_buy|sniper_wizard|staking|vanity_wallet|community_vision|wallet_tracker|x_followers|engagement|subscriptions_accounts|resizer)$/, async (ctx) => {
   const user = await getUserState(String(ctx.from.id));
   await ctx.answerCallbackQuery();
   await renderScreen(ctx, `help_${ctx.match[1]}`, user);
@@ -14169,6 +14597,22 @@ bot.callbackQuery('sniper:locked:withdraw', async (ctx) => {
   await renderScreen(ctx, 'sniper_wizard', user);
 });
 
+bot.callbackQuery('sniper:locked:add_to_trading', async (ctx) => {
+  const user = await getUserState(String(ctx.from.id));
+  await ctx.answerCallbackQuery({ text: 'Generate or import the sniper wallets first.' });
+  await renderScreen(ctx, 'sniper_wizard', user);
+});
+
+bot.callbackQuery('sniper:add_to_trading', async (ctx) => {
+  const userId = String(ctx.from.id);
+  const updated = await updateUserState(userId, (draft) => {
+    syncSniperWizardTradingDesk(draft, { selectFirst: true });
+    return draft;
+  });
+  await ctx.answerCallbackQuery({ text: 'Sniper Wizard wallets added to Buy / Sell.' });
+  await renderScreen(ctx, 'sniper_wizard', updated);
+});
+
 bot.callbackQuery('nav:community_vision', async (ctx) => {
   const updated = await updateUserState(String(ctx.from.id), (draft) => {
     draft.activeCommunityVisionId = null;
@@ -14350,6 +14794,11 @@ bot.callbackQuery('nav:wallet_tracker_archive', async (ctx) => {
   await renderScreen(ctx, 'wallet_tracker_archive', updated);
 });
 
+bot.callbackQuery('nav:staking', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await renderScreen(ctx, 'staking', await getUserState(String(ctx.from.id)));
+});
+
 bot.callbackQuery('nav:x_followers', async (ctx) => {
   const user = await getUserState(String(ctx.from.id));
   await ctx.answerCallbackQuery();
@@ -14369,6 +14818,103 @@ bot.callbackQuery('nav:subscriptions_accounts', async (ctx) => {
 bot.callbackQuery('nav:subscriptions_catalog', async (ctx) => {
   await ctx.answerCallbackQuery();
   await renderScreen(ctx, 'subscriptions_catalog', await getUserState(String(ctx.from.id)));
+});
+
+bot.callbackQuery('staking:link_active_wallet', async (ctx) => {
+  const userId = String(ctx.from.id);
+  const current = await getUserState(userId);
+  const activeWallet = getActiveTradingWallet(current);
+  if (!activeWallet?.address) {
+    await ctx.answerCallbackQuery({ text: 'Pick a Buy / Sell wallet first.' });
+    await renderScreen(ctx, 'staking', current);
+    return;
+  }
+
+  const updated = await updateUserState(userId, (draft) => {
+    draft.staking = normalizeStakingState({
+      ...draft.staking,
+      walletAddress: activeWallet.address,
+      sourceWalletId: activeWallet.id,
+      status: 'tracking',
+      lastError: null,
+    });
+    return draft;
+  });
+  await ctx.answerCallbackQuery({ text: 'Active Buy / Sell wallet linked to staking.' });
+  await renderScreen(ctx, 'staking', updated);
+});
+
+bot.callbackQuery('staking:claim', async (ctx) => {
+  const userId = String(ctx.from.id);
+  const user = await getUserState(userId);
+  const state = normalizeStakingState(user.staking);
+
+  if (!state.walletAddress) {
+    await ctx.answerCallbackQuery({ text: 'Link a staking wallet first.' });
+    await renderScreen(ctx, 'staking', user);
+    return;
+  }
+
+  if (state.claimableLamports < state.claimThresholdLamports) {
+    await ctx.answerCallbackQuery({
+      text: `Nothing claimable yet. Minimum claim is ${formatSolAmountFromLamports(state.claimThresholdLamports)} SOL.`,
+    });
+    await renderScreen(ctx, 'staking', user);
+    return;
+  }
+
+  try {
+    const result = await sendStakingClaimRewards(user);
+    const updated = await updateUserState(userId, (draft) => {
+      draft.staking = normalizeStakingState({
+        ...draft.staking,
+        claimableLamports: 0,
+        totalClaimedLamports: (draft.staking?.totalClaimedLamports || 0) + result.claimedLamports,
+        lastClaimedLamports: result.claimedLamports,
+        lastClaimedAt: new Date().toISOString(),
+        lastClaimSignature: result.signature,
+        status: 'tracking',
+        lastError: null,
+      });
+      return draft;
+    });
+    await appendUserActivityLog(userId, {
+      scope: 'staking',
+      level: 'info',
+      message: `Manual staking claim sent ${formatSolAmountFromLamports(result.claimedLamports)} SOL to ${updated.staking.walletAddress}.`,
+    });
+    await ctx.answerCallbackQuery({
+      text: `Claim sent: ${formatSolAmountFromLamports(result.claimedLamports)} SOL.`,
+    });
+    await renderScreen(ctx, 'staking', updated);
+  } catch (error) {
+    const updated = await updateUserState(userId, (draft) => {
+      draft.staking = normalizeStakingState({
+        ...draft.staking,
+        lastError: String(error.message || error),
+      });
+      return draft;
+    });
+    await ctx.answerCallbackQuery({ text: String(error.message || error) });
+    await renderScreen(ctx, 'staking', updated);
+  }
+});
+
+bot.callbackQuery('staking:request_unstake', async (ctx) => {
+  const user = await getUserState(String(ctx.from.id));
+  const state = normalizeStakingState(user.staking);
+  const text = state.walletAddress
+    ? `The launch-mode tracker is live now. The hard-staking deposit flow will use a ${formatDayCountLabel(STAKING_UNSTAKE_COOLDOWN_DAYS)} cooldown once that path is exposed.`
+    : 'Link a staking wallet first.';
+  await ctx.answerCallbackQuery({ text });
+  await renderScreen(ctx, 'staking', user);
+});
+
+bot.callbackQuery('staking:explain_epoch', async (ctx) => {
+  await ctx.answerCallbackQuery({
+    text: `Rewards build continuously. Live weights are 0-6 days at 0.25x, 7-29 days at 1.0x, 30-89 days at 1.25x, 90-179 days at 1.5x, and 180+ days at 2.0x. Claim any time once you cross ${formatSolAmountFromLamports(STAKING_MIN_CLAIM_LAMPORTS)} SOL.`,
+  });
+  await renderScreen(ctx, 'staking', await getUserState(String(ctx.from.id)));
 });
 
 bot.callbackQuery('nav:accounts_catalog', async (ctx) => {
@@ -14759,6 +15305,38 @@ bot.callbackQuery(/^magicbundle:set:(token_name|mint|wallet_count|stop_loss|take
   await renderScreen(ctx, 'magic_bundle_editor', updated);
 });
 
+bot.callbackQuery('magicbundle:locked:add_to_trading', async (ctx) => {
+  const user = await getUserState(String(ctx.from.id));
+  await ctx.answerCallbackQuery({ text: 'Generate the bundle wallets first.' });
+  await renderScreen(ctx, 'magic_bundle_editor', user);
+});
+
+bot.callbackQuery(/^magicbundle:add_to_trading:(.+)$/, async (ctx) => {
+  const magicBundleId = ctx.match[1];
+  const userId = String(ctx.from.id);
+  const current = await getUserState(userId);
+  const order = current.magicBundles.find((item) => item.id === magicBundleId) ?? current.magicBundle;
+  if (!order || !Array.isArray(order.splitWallets) || !order.splitWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)) {
+    await ctx.answerCallbackQuery({ text: 'Generate the bundle wallets first.' });
+    await renderScreen(ctx, 'magic_bundle_editor', current);
+    return;
+  }
+
+  const updated = await updateUserState(userId, (draft) => {
+    syncTradingDeskWalletsFromSource(
+      draft,
+      'magic_bundle',
+      order.id,
+      createMagicBundleTradingWallets(order),
+      { selectFirst: true },
+    );
+    return draft;
+  });
+
+  await ctx.answerCallbackQuery({ text: 'Bundle wallets added to Buy / Sell.' });
+  await renderScreen(ctx, 'magic_bundle_editor', updated);
+});
+
 bot.callbackQuery(/^magicbundle:archive:(.+)$/, async (ctx) => {
   const magicBundleId = ctx.match[1];
   const updated = await updateUserState(String(ctx.from.id), (draft) => {
@@ -14921,6 +15499,38 @@ bot.callbackQuery(/^launchbuy:launch:(.+)$/, async (ctx) => {
   });
 
   await ctx.answerCallbackQuery({ text: 'Launch queued.' });
+  await renderScreen(ctx, 'launch_buy_editor', updated);
+});
+
+bot.callbackQuery('launchbuy:locked:add_to_trading', async (ctx) => {
+  const user = await getUserState(String(ctx.from.id));
+  await ctx.answerCallbackQuery({ text: 'Generate or import the buyer wallets first.' });
+  await renderScreen(ctx, 'launch_buy_editor', user);
+});
+
+bot.callbackQuery(/^launchbuy:add_to_trading:(.+)$/, async (ctx) => {
+  const launchBuyId = ctx.match[1];
+  const userId = String(ctx.from.id);
+  const current = await getUserState(userId);
+  const order = current.launchBuys.find((item) => item.id === launchBuyId) ?? current.launchBuy;
+  if (!order || !Array.isArray(order.buyerWallets) || !order.buyerWallets.some((wallet) => wallet?.address && wallet?.secretKeyB64)) {
+    await ctx.answerCallbackQuery({ text: 'Generate or import the buyer wallets first.' });
+    await renderScreen(ctx, 'launch_buy_editor', current);
+    return;
+  }
+
+  const updated = await updateUserState(userId, (draft) => {
+    syncTradingDeskWalletsFromSource(
+      draft,
+      'launch_buy',
+      order.id,
+      createLaunchBuyTradingWallets(order),
+      { selectFirst: true },
+    );
+    return draft;
+  });
+
+  await ctx.answerCallbackQuery({ text: 'Launch + Buy wallets added to Buy / Sell.' });
   await renderScreen(ctx, 'launch_buy_editor', updated);
 });
 
@@ -15912,7 +16522,7 @@ bot.callbackQuery('target:continue', async (ctx) => {
   await renderScreen(ctx, hasLaunchAccess(user) ? 'confirm' : 'payment', user);
 });
 
-bot.callbackQuery(/^refresh:(home|start|amount|payment|confirm|target|status|help|help_reaction|help_volume|help_buy_sell|help_burn_agent|help_holder_booster|help_fomo_booster|help_magic_sell|help_magic_bundle|help_launch_buy|help_sniper_wizard|help_vanity_wallet|help_community_vision|help_wallet_tracker|help_x_followers|help_engagement|help_resizer|buy_sell|buy_sell_wallets|buy_sell_quick|buy_sell_limit|buy_sell_copy|volume|volume_organic|volume_archive|volume_bundled|volume_order|burn_agent|burn_agent_archive|burn_agent_editor|holder_booster|fomo_booster|magic_bundle|magic_bundle_archive|magic_bundle_editor|magic_sell|magic_sell_archive|magic_sell_editor|launch_buy|launch_buy_archive|launch_buy_editor|sniper_wizard|vanity_wallet|community_vision|community_vision_archive|community_vision_editor|wallet_tracker|wallet_tracker_archive|wallet_tracker_editor|x_followers|engagement|resizer)$/, async (ctx) => {
+bot.callbackQuery(/^refresh:(home|start|amount|payment|confirm|target|status|help|help_reaction|help_volume|help_buy_sell|help_burn_agent|help_holder_booster|help_fomo_booster|help_magic_sell|help_magic_bundle|help_launch_buy|help_sniper_wizard|help_staking|help_vanity_wallet|help_community_vision|help_wallet_tracker|help_x_followers|help_engagement|help_subscriptions_accounts|help_resizer|buy_sell|buy_sell_wallets|buy_sell_quick|buy_sell_limit|buy_sell_copy|volume|volume_organic|volume_archive|volume_bundled|volume_order|burn_agent|burn_agent_archive|burn_agent_editor|holder_booster|fomo_booster|magic_bundle|magic_bundle_archive|magic_bundle_editor|magic_sell|magic_sell_archive|magic_sell_editor|launch_buy|launch_buy_archive|launch_buy_editor|sniper_wizard|staking|vanity_wallet|community_vision|community_vision_archive|community_vision_editor|wallet_tracker|wallet_tracker_archive|wallet_tracker_editor|x_followers|engagement|subscriptions_accounts|subscriptions_catalog|accounts_catalog|resizer)$/, async (ctx) => {
   const route = ctx.match[1];
   const userId = String(ctx.from.id);
   const user = route.startsWith('buy_sell')
@@ -16112,9 +16722,9 @@ bot.on('message:text', async (ctx) => {
   if (user.resizer?.awaitingImage) {
     await ctx.reply(
       [
-        '🖼️ *Resizer Is Waiting For An Image*',
+        'ðŸ–¼ï¸ *Resizer Is Waiting For An Image*',
         '',
-        'Send a photo or image file here and I’ll resize it for you.',
+        'Send a photo or image file here and Iâ€™ll resize it for you.',
       ].join('\n'),
       {
         parse_mode: 'Markdown',
@@ -16241,7 +16851,7 @@ bot.on('message:text', async (ctx) => {
     } catch (error) {
       await ctx.reply(
         [
-          `Ã¢Å¡Â Ã¯Â¸Â ${String(error.message || error)}`,
+          `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${String(error.message || error)}`,
           '',
           promptForBurnAgentField(activeAgent.awaitingField),
         ].join('\n'),
@@ -16355,7 +16965,7 @@ bot.on('message:text', async (ctx) => {
     } catch (error) {
       await ctx.reply(
         [
-          `Ã¢Å¡Â Ã¯Â¸Â ${String(error.message || error)}`,
+          `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${String(error.message || error)}`,
           '',
           promptForOrganicField(user.organicVolumeOrder.awaitingField),
         ].join('\n'),
@@ -16434,7 +17044,7 @@ bot.on('message:text', async (ctx) => {
     } catch (error) {
       await ctx.reply(
         [
-          `Ã¢Å¡Â Ã¯Â¸Â ${String(error.message || error)}`,
+          `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${String(error.message || error)}`,
           '',
           promptForMagicSellField(user.magicSell.awaitingField),
         ].join('\n'),
@@ -16491,7 +17101,7 @@ bot.on('message:text', async (ctx) => {
     } catch (error) {
       await ctx.reply(
         [
-          `⚠️ ${String(error.message || error)}`,
+          `âš ï¸ ${String(error.message || error)}`,
           '',
           'Send a short base58 pattern like `wiz` or `moon`.',
         ].join('\n'),
@@ -16881,7 +17491,7 @@ bot.on('message:text', async (ctx) => {
     if (activeLaunchBuy.awaitingField === 'logo') {
       await ctx.reply(
         [
-          '🖼️ *Launch + Buy Is Waiting For A Logo*',
+          'ðŸ–¼ï¸ *Launch + Buy Is Waiting For A Logo*',
           '',
           promptForLaunchBuyField('logo', activeLaunchBuy),
         ].join('\n'),
@@ -16985,7 +17595,7 @@ bot.on('message:text', async (ctx) => {
     } catch (error) {
       await ctx.reply(
         [
-          `⚠️ ${String(error.message || error)}`,
+          `âš ï¸ ${String(error.message || error)}`,
           '',
           promptForLaunchBuyField(user.launchBuy.awaitingField, user.launchBuy),
         ].join('\n'),
@@ -17111,7 +17721,7 @@ bot.on('message:text', async (ctx) => {
     } catch (error) {
       await ctx.reply(
         [
-          `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${String(error.message || error)}`,
+          `ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â ${String(error.message || error)}`,
           '',
           promptForFomoField(user.fomoBooster.awaitingField),
         ].join('\n'),
@@ -17301,7 +17911,7 @@ bot.on('message:text', async (ctx) => {
     } catch (error) {
       await ctx.reply(
         [
-          `Ã¢Å¡Â Ã¯Â¸Â ${String(error.message || error)}`,
+          `ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ${String(error.message || error)}`,
           '',
           promptForHolderField(user.holderBooster.awaitingField),
         ].join('\n'),
@@ -17672,12 +18282,12 @@ homeText = function homeText() {
     '',
     MENU_DIVIDER,
     '\u{1F680} *Supported Venues*',
-    'Raydium • PumpSwap • Meteora • Pumpfun • Meteora DBC • Bags • LetsBonk • LaunchLab',
+    'Raydium â€¢ PumpSwap â€¢ Meteora â€¢ Pumpfun â€¢ Meteora DBC â€¢ Bags â€¢ LetsBonk â€¢ LaunchLab',
     '',
-    '\u{1F4CA} Plans from 1 SOL • \u{1F6E1}\uFE0F Professional execution • \u{1F381} Free trial available',
-    `\u{1F4B8} Built-in trading routes use *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per trade, which is roughly half the 1% fee many major Telegram bots advertise`,
+    '\u{1F4CA} Plans from 1 SOL â€¢ \u{1F6E1}\uFE0F Professional execution â€¢ \u{1F381} Free trial available',
+    `\u{1F4B8} Built-in trading routes use *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per trade, lower than every competitor we track, and net platform profit is routed 50% to treasury, 25% to buyback + burn, and 25% to the SOL rewards vault`,
     `\u{1F91D} Need help? @${SUPPORT_USERNAME}`,
-    '\u{1F4AC} Community chat: @wizard_toolz',
+    '\u{1F4AC} Community chat: @wizardtoolz',
     '\u{1F514} Alerts channel: @wizardtoolz_alerts',
     `\u{1F6E0}\uFE0F Want custom tools built for you? Message support at @${SUPPORT_USERNAME}`,
     '',
@@ -17722,3 +18332,4 @@ if (cfg.telegramTransport === 'webhook') {
   console.log('Telegram bot starting in polling mode...');
   await startPollingTransport(bot);
 }
+

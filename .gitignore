@@ -19,18 +19,30 @@ steel-tester/.env.*.local
 # Runtime state
 data/telegram-store.json
 steel-tester/data/telegram-store.json
+steel-tester/data/launch-assets/
+steel-tester/data/*.backup-*.json
 steel-tester/logs/
 steel-tester/*.log
+steel-tester/*.err
 steel-tester/runtime.current.log
 steel-tester/runtime.current.err
 steel-tester/runtime.current.err.log
 steel-tester/runtime.current.out
 steel-tester/runtime.current.out.log
 steel-tester/outputs/
+steel-tester/runtime/
 
 # Local debug / temporary files
 steel-tester/assets/*.har
 steel-tester/tmp-*.js
+.tmp-localtunnel/
+CON
+steel-tester/runtime-test.err
+steel-tester/runtime-test.log
+staking/target/
+staking/.anchor/
+staking/node_modules/
+staking/test-ledger/
 
 # OS / editor noise
 .DS_Store

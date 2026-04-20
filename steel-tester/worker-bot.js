@@ -14,6 +14,7 @@ import {
 } from '@solana/web3.js';
 import {
   createAssociatedTokenAccountInstruction,
+  createAssociatedTokenAccountIdempotentInstruction,
   createBurnCheckedInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
@@ -37,9 +38,17 @@ import { createManagedSolanaRpcPool, parseRpcUrlList } from './lib/solana/rpcPoo
 const ROOT_DIR = path.resolve('.');
 const DATA_DIR = path.join(ROOT_DIR, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'telegram-store.json');
-const WORKER_POLL_INTERVAL_MS = parsePositiveInt(process.env.WORKER_BOT_POLL_MS, 15_000);
+const WORKER_POLL_INTERVAL_MS = parsePositiveInt(process.env.WORKER_BOT_POLL_MS, 2_000);
+const WORKER_ORDER_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_ORDER_SCAN_INTERVAL_MS, 4_000);
+const WORKER_SNIPER_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_SNIPER_SCAN_INTERVAL_MS, WORKER_POLL_INTERVAL_MS);
+const WORKER_TRADING_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_TRADING_SCAN_INTERVAL_MS, 4_000);
+const WORKER_LAUNCH_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_LAUNCH_SCAN_INTERVAL_MS, WORKER_POLL_INTERVAL_MS);
+const WORKER_AUTOMATION_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_AUTOMATION_SCAN_INTERVAL_MS, 8_000);
+const WORKER_STAKING_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_STAKING_SCAN_INTERVAL_MS, 10_000);
+const WORKER_DEV_SWAP_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_DEV_SWAP_SCAN_INTERVAL_MS, 30_000);
 const SPLIT_FEE_BUFFER_LAMPORTS = 20_000;
 const PROCESSING_RETRY_AFTER_MS = 5 * 60_000;
+const PLATFORM_SPLIT_BPS_DENOMINATOR = 10_000;
 const DEV_WALLET_SWAP_RETRY_AFTER_MS = parsePositiveInt(
   process.env.DEV_WALLET_SWAP_RETRY_AFTER_MS,
   2 * 60_000,
@@ -95,6 +104,10 @@ const SNIPER_JITO_TIP_LAMPORTS = parsePositiveInt(
 const SNIPER_GAS_RESERVE_LAMPORTS = parseSolToLamports(
   process.env.SNIPER_GAS_RESERVE_SOL || '0.01',
 );
+const SNIPER_FUNDING_TOLERANCE_LAMPORTS = parsePositiveInt(
+  process.env.SNIPER_FUNDING_TOLERANCE_LAMPORTS,
+  500_000,
+);
 const SNIPER_BUY_SLIPPAGE_PERCENT = parsePositiveInt(
   process.env.SNIPER_BUY_SLIPPAGE_PERCENT,
   10,
@@ -106,6 +119,14 @@ const SNIPER_COMPUTE_UNIT_LIMIT = parsePositiveInt(
 const SNIPER_PRIORITY_FEE_MICROLAMPORTS = parsePositiveInt(
   process.env.SNIPER_PRIORITY_FEE_MICROLAMPORTS,
   300_000,
+);
+const SNIPER_LAUNCH_FAST_FETCH_RETRIES = parsePositiveInt(
+  process.env.SNIPER_LAUNCH_FAST_FETCH_RETRIES,
+  8,
+);
+const SNIPER_LAUNCH_FAST_FETCH_DELAY_MS = parsePositiveInt(
+  process.env.SNIPER_LAUNCH_FAST_FETCH_DELAY_MS,
+  40,
 );
 const SNIPER_LAUNCH_FETCH_RETRIES = parsePositiveInt(
   process.env.SNIPER_LAUNCH_FETCH_RETRIES,
@@ -122,6 +143,10 @@ const SNIPER_WATCHER_HEARTBEAT_MS = parsePositiveInt(
 const SNIPER_WATCHER_STALE_MS = parsePositiveInt(
   process.env.SNIPER_WATCHER_STALE_MS,
   12_000,
+);
+const SNIPER_BALANCE_REFRESH_MS = parsePositiveInt(
+  process.env.SNIPER_BALANCE_REFRESH_MS,
+  15_000,
 );
 const COMMUNITY_VISION_SCAN_INTERVAL_MS = parsePositiveInt(
   process.env.COMMUNITY_VISION_SCAN_INTERVAL_MS,
@@ -156,6 +181,11 @@ const JITO_AUTH_KEY = process.env.JITO_AUTH_KEY?.trim() || null;
 const BUNDLED_JITO_TIP_LAMPORTS = parsePositiveInt(process.env.BUNDLED_JITO_TIP_LAMPORTS, 10_000);
 const BUNDLED_JITO_STATUS_TIMEOUT_MS = parsePositiveInt(process.env.BUNDLED_JITO_STATUS_TIMEOUT_MS, 45_000);
 const BUNDLED_JITO_POLL_MS = parsePositiveInt(process.env.BUNDLED_JITO_POLL_MS, 2_000);
+const JITO_TIP_ACCOUNTS_CACHE_MS = parsePositiveInt(process.env.JITO_TIP_ACCOUNTS_CACHE_MS, 60_000);
+const JITO_TIP_PREFETCH_INTERVAL_MS = parsePositiveInt(
+  process.env.JITO_TIP_PREFETCH_INTERVAL_MS,
+  Math.max(15_000, Math.floor(JITO_TIP_ACCOUNTS_CACHE_MS / 2)),
+);
 const JITO_MAX_BUNDLE_TRANSACTIONS = 5;
 const SPLITNOW_API_KEY = process.env.SPLITNOW_API_KEY?.trim() || null;
 const SPLITNOW_API_BASE_URL = process.env.SPLITNOW_API_BASE_URL?.trim() || 'https://splitnow.io/api';
@@ -166,6 +196,18 @@ const MAGIC_BUNDLE_STEALTH_SETUP_FEE_LAMPORTS = parseSolToLamports(
 );
 const TRADING_HANDLING_FEE_BPS = parsePositiveInt(process.env.TRADING_HANDLING_FEE_BPS, 50);
 const MAGIC_BUNDLE_FEE_RESERVE_LAMPORTS = parseSolToLamports(process.env.MAGIC_BUNDLE_FEE_RESERVE_SOL || '0.005');
+const STAKING_MIN_CLAIM_LAMPORTS = parseSolToLamports(process.env.STAKING_MIN_CLAIM_SOL || '0.01');
+const STAKING_REWARDS_VAULT_RESERVE_LAMPORTS = parseSolToLamports(
+  process.env.STAKING_REWARDS_VAULT_RESERVE_SOL || '0.001',
+);
+const STAKING_EARLY_WEIGHT_DAYS = parsePositiveInt(process.env.STAKING_EARLY_WEIGHT_DAYS, 7);
+const STAKING_WEIGHT_TIERS = [
+  { minDays: 0, bps: 2500, label: 'Starting' },
+  { minDays: STAKING_EARLY_WEIGHT_DAYS, bps: 10000, label: 'Standard' },
+  { minDays: 30, bps: 12500, label: 'Committed' },
+  { minDays: 90, bps: 15000, label: 'Core' },
+  { minDays: 180, bps: 20000, label: 'Diamond' },
+];
 const MAGIC_BUNDLE_POSITION_GAS_RESERVE_LAMPORTS = parseSolToLamports(
   process.env.MAGIC_BUNDLE_POSITION_GAS_RESERVE_SOL || '0.003',
 );
@@ -212,9 +254,19 @@ const LAUNCH_BUY_MAX_WALLET_COUNT = parsePositiveInt(
 const LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS = parseSolToLamports(
   process.env.LAUNCH_BUY_DEFAULT_JITO_TIP_SOL || '0.01',
 );
+const LAUNCH_BUY_LAUNCH_OVERHEAD_LAMPORTS = parseSolToLamports(
+  process.env.LAUNCH_BUY_LAUNCH_OVERHEAD_SOL || '0.012',
+);
+const LAUNCH_BUY_BUYER_RESERVE_LAMPORTS = parseSolToLamports(
+  process.env.LAUNCH_BUY_BUYER_RESERVE_SOL || '0.006',
+);
+const LAUNCH_BUY_FUNDING_TOLERANCE_LAMPORTS = parsePositiveInt(
+  process.env.LAUNCH_BUY_FUNDING_TOLERANCE_LAMPORTS,
+  500_000,
+);
 const LAUNCH_BUY_MAX_ATOMIC_BUYERS_PER_TX = parsePositiveInt(
   process.env.LAUNCH_BUY_MAX_ATOMIC_BUYERS_PER_TX,
-  3,
+  1,
 );
 const LAUNCH_BUY_ASSETS_DIR = path.join(DATA_DIR, 'launch-assets');
 const MAGIC_BUNDLE_DEV_SELL_SCAN_LIMIT = parsePositiveInt(
@@ -229,6 +281,13 @@ let solUsdRateCache = null;
 let solUsdRateCachedAt = 0;
 const sniperWizardSubscriptions = new Map();
 let sniperWizardHeartbeatTimer = null;
+const knownLaunchMintCache = new Map();
+let jitoTipAccountsCache = {
+  accounts: null,
+  cachedAt: 0,
+};
+let jitoTipAccountsInFlight = null;
+const workerScanLastRunAt = new Map();
 
 const ORGANIC_VOLUME_PACKAGES = [
   { key: '3k', label: '3K', treasuryCutSol: '0.05' },
@@ -629,6 +688,47 @@ function extractPumpLaunchMintAddress(transaction) {
   return null;
 }
 
+function extractPumpLaunchMintAddressFromCompiledTransaction(transaction) {
+  const message = transaction?.transaction?.message;
+  const staticAccountKeys = Array.isArray(message?.staticAccountKeys)
+    ? message.staticAccountKeys.map((key) => publicKeyishToBase58(key)).filter(Boolean)
+    : [];
+  const instructions = Array.isArray(message?.compiledInstructions)
+    ? message.compiledInstructions
+    : [];
+
+  for (const instruction of instructions) {
+    const programId = staticAccountKeys[instruction?.programIdIndex];
+    if (programId !== PUMP_PROGRAM_ID.toBase58()) {
+      continue;
+    }
+    if (!matchesDiscriminator(instruction?.data, PUMP_CREATE_DISCRIMINATOR)
+      && !matchesDiscriminator(instruction?.data, PUMP_CREATE_V2_DISCRIMINATOR)) {
+      continue;
+    }
+    const mintIndex = Array.isArray(instruction?.accountKeyIndexes) ? instruction.accountKeyIndexes[0] : null;
+    const mintAddress = Number.isInteger(mintIndex) ? staticAccountKeys[mintIndex] : null;
+    if (mintAddress) {
+      return mintAddress;
+    }
+  }
+
+  return null;
+}
+
+function rememberKnownLaunchMint(signature, mintAddress) {
+  if (!signature || !mintAddress) {
+    return;
+  }
+  knownLaunchMintCache.set(signature, mintAddress);
+  if (knownLaunchMintCache.size > 200) {
+    const firstKey = knownLaunchMintCache.keys().next().value;
+    if (firstKey) {
+      knownLaunchMintCache.delete(firstKey);
+    }
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -871,12 +971,99 @@ function buildDevWalletSwapConfig(devWalletAddress, devWalletSigner) {
   }
 }
 
-function buildPumpCreatorRewardsConfig(devWalletSigner) {
-  const targetMint = process.env.PUMP_CREATOR_REWARD_MINT?.trim()
+function isConfiguredAddress(value) {
+  return Boolean(value && !String(value).includes('PLACEHOLDER'));
+}
+
+function buildPlatformRevenueConfig(devWalletSigner) {
+  const tokenMint = process.env.WIZARD_TOKEN_MINT?.trim()
+    || process.env.PUMP_CREATOR_REWARD_MINT?.trim()
+    || process.env.DEV_WALLET_SWAP_TARGET_MINT?.trim()
+    || null;
+  const rewardsVaultAddress = process.env.WIZARD_REWARDS_VAULT_ADDRESS?.trim() || null;
+  const treasuryBps = parsePositiveInt(process.env.PLATFORM_TREASURY_BPS, 5000);
+  const burnBps = parsePositiveInt(process.env.PLATFORM_BURN_BPS, 2500);
+  const rewardsBps = parsePositiveInt(process.env.PLATFORM_REWARDS_BPS, 2500);
+  const buySlippagePercent = parsePositiveInt(
+    process.env.PLATFORM_BUYBACK_SLIPPAGE_PERCENT || process.env.PUMP_CREATOR_REWARD_BUY_SLIPPAGE,
+    5,
+  );
+  const missing = [];
+  if (!tokenMint) {
+    missing.push('WIZARD_TOKEN_MINT');
+  }
+  if (!isConfiguredAddress(rewardsVaultAddress)) {
+    missing.push('WIZARD_REWARDS_VAULT_ADDRESS');
+  }
+  if (!devWalletSigner) {
+    missing.push('DEV_WALLET_SECRET_KEY_B64 or DEV_WALLET_SECRET_KEY');
+  }
+
+  if (treasuryBps + burnBps + rewardsBps !== PLATFORM_SPLIT_BPS_DENOMINATOR) {
+    return {
+      enabled: false,
+      reason: 'PLATFORM_TREASURY_BPS + PLATFORM_BURN_BPS + PLATFORM_REWARDS_BPS must equal 10000',
+      tokenMint,
+      rewardsVaultAddress,
+      treasuryBps,
+      burnBps,
+      rewardsBps,
+      buySlippagePercent,
+      signer: devWalletSigner,
+    };
+  }
+
+  if (missing.length > 0) {
+    return {
+      enabled: false,
+      reason: `missing ${missing.join(', ')}`,
+      tokenMint,
+      rewardsVaultAddress,
+      treasuryBps,
+      burnBps,
+      rewardsBps,
+      buySlippagePercent,
+      signer: devWalletSigner,
+    };
+  }
+
+  try {
+    return {
+      enabled: true,
+      reason: null,
+      tokenMint: new PublicKey(tokenMint).toBase58(),
+      rewardsVaultAddress: new PublicKey(rewardsVaultAddress).toBase58(),
+      treasuryBps,
+      burnBps,
+      rewardsBps,
+      buySlippagePercent,
+      signer: devWalletSigner,
+    };
+  } catch (error) {
+    return {
+      enabled: false,
+      reason: String(error.message || error),
+      tokenMint,
+      rewardsVaultAddress,
+      treasuryBps,
+      burnBps,
+      rewardsBps,
+      buySlippagePercent,
+      signer: devWalletSigner,
+    };
+  }
+}
+
+function buildPumpCreatorRewardsConfig(devWalletSigner, platformRevenue) {
+  const targetMint = platformRevenue?.tokenMint
+    || process.env.PUMP_CREATOR_REWARD_MINT?.trim()
     || process.env.DEV_WALLET_SWAP_TARGET_MINT?.trim()
     || null;
   const minimumClaimLamports = parseSolToLamports(process.env.PUMP_CREATOR_REWARD_MIN_SOL || '0');
-  const buySlippagePercent = parsePositiveInt(process.env.PUMP_CREATOR_REWARD_BUY_SLIPPAGE, 5);
+  const buySlippagePercent = parsePositiveInt(
+    process.env.PUMP_CREATOR_REWARD_BUY_SLIPPAGE,
+    platformRevenue?.buySlippagePercent ?? 5,
+  );
 
   const missing = [];
   if (!targetMint) {
@@ -884,6 +1071,9 @@ function buildPumpCreatorRewardsConfig(devWalletSigner) {
   }
   if (!devWalletSigner) {
     missing.push('DEV_WALLET_SECRET_KEY_B64 or DEV_WALLET_SECRET_KEY');
+  }
+  if (!platformRevenue?.enabled) {
+    missing.push(platformRevenue?.reason || 'platform revenue routing config');
   }
 
   if (missing.length > 0) {
@@ -943,6 +1133,7 @@ function getConfig() {
   }
 
   const { signer: devWalletSigner, reason: devWalletSignerReason } = buildDevWalletSigner(devWalletAddress);
+  const platformRevenue = buildPlatformRevenueConfig(devWalletSigner);
 
   return {
     telegramBotToken,
@@ -956,8 +1147,9 @@ function getConfig() {
     devWalletAddress,
     devWalletSigner,
     devWalletSignerReason,
+    platformRevenue,
     devWalletSwap: buildDevWalletSwapConfig(devWalletAddress, devWalletSigner),
-    pumpCreatorRewards: buildPumpCreatorRewardsConfig(devWalletSigner),
+    pumpCreatorRewards: buildPumpCreatorRewardsConfig(devWalletSigner, platformRevenue),
     volumeTrial: buildVolumeTrialConfig(),
     communityVision: {
       enabled: Boolean(communityVisionApiUrl),
@@ -1024,7 +1216,8 @@ function createDefaultWorkerState() {
       lastClaimedLamports: null,
       lastClaimSignature: null,
       pendingTreasuryLamports: null,
-      pendingBuybackLamports: null,
+      pendingBurnBuybackLamports: null,
+      pendingRewardsVaultLamports: null,
       pendingBurnAmount: null,
       lastTreasuryAttemptedAt: null,
       lastTreasuryProcessedAt: null,
@@ -1035,12 +1228,35 @@ function createDefaultWorkerState() {
       lastBuybackMode: null,
       lastBuybackTokenProgram: null,
       lastBuybackRawAmount: null,
+      lastRewardsVaultAttemptedAt: null,
+      lastRewardsVaultProcessedAt: null,
+      lastRewardsVaultSignature: null,
+      lastRewardsVaultRawAmount: null,
       lastBurnAttemptedAt: null,
       lastBurnProcessedAt: null,
       lastBurnSignature: null,
       lastBurnAmount: null,
       lastBurnError: null,
       lastError: cfg.pumpCreatorRewards.enabled ? null : cfg.pumpCreatorRewards.reason,
+    },
+    stakingRewards: {
+      enabled: cfg.platformRevenue.enabled,
+      status: cfg.platformRevenue.enabled ? 'idle' : 'disabled',
+      mint: cfg.platformRevenue.tokenMint ?? null,
+      rewardsVaultAddress: cfg.platformRevenue.rewardsVaultAddress ?? null,
+      reserveLamports: STAKING_REWARDS_VAULT_RESERVE_LAMPORTS,
+      claimThresholdLamports: STAKING_MIN_CLAIM_LAMPORTS,
+      earlyWeightDays: STAKING_EARLY_WEIGHT_DAYS,
+      pendingUndistributedLamports: 0,
+      lastCheckedAt: null,
+      lastObservedVaultLamports: null,
+      lastObservedVaultSol: null,
+      lastDistributedAt: null,
+      lastDistributedLamports: null,
+      totalDistributedLamports: 0,
+      totalTrackedRaw: '0',
+      totalTrackedWallets: 0,
+      lastError: cfg.platformRevenue.enabled ? null : cfg.platformRevenue.reason,
     },
   };
 }
@@ -1983,6 +2199,26 @@ function normalizeUserSniperWizard(user = {}) {
     : normalizeSniperWizardRecord({});
 }
 
+function collectRunnableSniperWizards(user = {}) {
+  const candidates = [];
+  const primary = normalizeUserSniperWizard(user);
+  if (primary?.id && sniperWizardCanRun(primary) && primary.automationEnabled) {
+    candidates.push(primary);
+  }
+  const fromArray = Array.isArray(user?.sniperWizards)
+    ? user.sniperWizards.map((order) => normalizeSniperWizardRecord(order))
+    : [];
+  for (const order of fromArray) {
+    if (!order?.id || !sniperWizardCanRun(order) || !order.automationEnabled) {
+      continue;
+    }
+    if (!candidates.some((item) => item.id === order.id)) {
+      candidates.push(order);
+    }
+  }
+  return candidates;
+}
+
 function normalizeUserCommunityVisions(user = {}) {
   return Array.isArray(user?.communityVisions)
     ? user.communityVisions.map((order) => normalizeCommunityVisionRecord(order))
@@ -2220,6 +2456,13 @@ function normalizeLaunchBuyBuyerWalletRecord(wallet = {}) {
   };
 }
 
+function estimateLaunchBuyBuyerReserveLamports(buyerWalletCount) {
+  const safeBuyerCount = Number.isInteger(buyerWalletCount)
+    ? Math.max(0, Math.min(LAUNCH_BUY_MAX_WALLET_COUNT, buyerWalletCount))
+    : 0;
+  return safeBuyerCount * LAUNCH_BUY_BUYER_RESERVE_LAMPORTS;
+}
+
 function createDefaultLaunchBuyRecord() {
   return {
     id: `lb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -2248,7 +2491,9 @@ function createDefaultLaunchBuyRecord() {
     jitoTipSol: formatSolAmountFromLamports(LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS),
     estimatedSetupFeeLamports: LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS,
     estimatedRoutingFeeLamports: 0,
-    estimatedTotalNeededLamports: LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS + LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS,
+    estimatedTotalNeededLamports: LAUNCH_BUY_NORMAL_SETUP_FEE_LAMPORTS
+      + LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS
+      + LAUNCH_BUY_LAUNCH_OVERHEAD_LAMPORTS,
     fundedReady: false,
     awaitingField: null,
     status: 'setup',
@@ -2313,6 +2558,7 @@ function normalizeLaunchBuyRecord(order = {}) {
   const estimatedRoutingFeeLamports = launchMode === 'magic' && totalBuyLamports
     ? Math.floor(totalBuyLamports * (MAGIC_BUNDLE_SPLITNOW_FEE_ESTIMATE_BPS / 10_000))
     : 0;
+  const buyerReserveLamports = estimateLaunchBuyBuyerReserveLamports(buyerWalletCount);
 
   return {
     ...defaults,
@@ -2345,7 +2591,12 @@ function normalizeLaunchBuyRecord(order = {}) {
     estimatedRoutingFeeLamports,
     estimatedTotalNeededLamports: Math.max(
       0,
-      estimatedSetupFeeLamports + estimatedRoutingFeeLamports + (totalBuyLamports || 0) + jitoTipLamports,
+      estimatedSetupFeeLamports
+        + estimatedRoutingFeeLamports
+        + (totalBuyLamports || 0)
+        + jitoTipLamports
+        + buyerReserveLamports
+        + LAUNCH_BUY_LAUNCH_OVERHEAD_LAMPORTS,
     ),
     fundedReady: Boolean(order?.fundedReady),
     awaitingField: typeof order?.awaitingField === 'string' ? order.awaitingField : null,
@@ -2375,6 +2626,19 @@ function normalizeUserLaunchBuys(user = {}) {
   return Array.isArray(user?.launchBuys)
     ? user.launchBuys.map((order) => normalizeLaunchBuyRecord(order))
     : [];
+}
+
+async function getLatestLaunchBuyOrder(userId, launchBuyId) {
+  if (!userId || !launchBuyId) {
+    return null;
+  }
+  const store = await readStore();
+  const user = store.users?.[userId];
+  if (!user) {
+    return null;
+  }
+  const orders = normalizeUserLaunchBuys(user);
+  return orders.find((order) => order.id === launchBuyId) ?? null;
 }
 
 async function ensureStore() {
@@ -2446,6 +2710,24 @@ async function readStore() {
         lastError: cfg.pumpCreatorRewards.enabled
           ? (parsed.worker?.pumpCreatorRewards?.lastError ?? null)
           : cfg.pumpCreatorRewards.reason,
+      },
+      stakingRewards: {
+        ...defaultWorkerState.stakingRewards,
+        ...(parsed.worker?.stakingRewards ?? {}),
+        enabled: cfg.platformRevenue.enabled,
+        status: cfg.platformRevenue.enabled
+          ? (parsed.worker?.stakingRewards?.status === 'disabled'
+            ? 'idle'
+            : (parsed.worker?.stakingRewards?.status ?? 'idle'))
+          : 'disabled',
+        mint: cfg.platformRevenue.tokenMint ?? null,
+        rewardsVaultAddress: cfg.platformRevenue.rewardsVaultAddress ?? null,
+        reserveLamports: STAKING_REWARDS_VAULT_RESERVE_LAMPORTS,
+        claimThresholdLamports: STAKING_MIN_CLAIM_LAMPORTS,
+        earlyWeightDays: STAKING_EARLY_WEIGHT_DAYS,
+        lastError: cfg.platformRevenue.enabled
+          ? (parsed.worker?.stakingRewards?.lastError ?? null)
+          : cfg.platformRevenue.reason,
       },
     },
   };
@@ -2804,15 +3086,17 @@ async function sendLegacyTransaction(instructions, signer) {
   }
 
   const signature = await connection.sendTransaction(transaction, [signer], {
+    skipPreflight: true,
     preflightCommitment: 'confirmed',
     maxRetries: 3,
   });
 
-  await connection.confirmTransaction({
+  await confirmTransactionByMetadata(
     signature,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }, 'confirmed');
+    latestBlockhash.blockhash,
+    latestBlockhash.lastValidBlockHeight,
+    'confirmed',
+  );
 
   return signature;
 }
@@ -2822,17 +3106,23 @@ function getReservedDevWalletLamports(workerState) {
     String(workerState?.pumpCreatorRewards?.pendingTreasuryLamports || '0'),
     10,
   );
-  const pendingBuybackLamports = Number.parseInt(
-    String(workerState?.pumpCreatorRewards?.pendingBuybackLamports || '0'),
+  const pendingBurnBuybackLamports = Number.parseInt(
+    String(workerState?.pumpCreatorRewards?.pendingBurnBuybackLamports || '0'),
+    10,
+  );
+  const pendingRewardsVaultLamports = Number.parseInt(
+    String(workerState?.pumpCreatorRewards?.pendingRewardsVaultLamports || '0'),
     10,
   );
 
-  return Math.max(0, pendingTreasuryLamports) + Math.max(0, pendingBuybackLamports);
+  return Math.max(0, pendingTreasuryLamports)
+    + Math.max(0, pendingBurnBuybackLamports)
+    + Math.max(0, pendingRewardsVaultLamports);
 }
 
-async function getMintTokenProgram(mintAddress) {
+async function getMintTokenProgram(mintAddress, commitment = 'confirmed') {
   const mintPubkey = new PublicKey(mintAddress);
-  const mintAccountInfo = await connection.getAccountInfo(mintPubkey, 'confirmed');
+  const mintAccountInfo = await connection.getAccountInfo(mintPubkey, commitment);
   if (!mintAccountInfo) {
     throw new Error(`Mint account not found for ${mintPubkey.toBase58()}.`);
   }
@@ -2875,6 +3165,85 @@ function formatTokenAmountFromRaw(rawAmount, decimals = 0) {
 
   const padded = fraction.toString().padStart(Math.max(1, decimals), '0').replace(/0+$/, '');
   return `${whole.toString()}.${padded}`;
+}
+
+function createDefaultStakingState() {
+  return {
+    walletAddress: null,
+    sourceWalletId: null,
+    status: 'setup',
+    manualClaimOnly: true,
+    rewardsAsset: 'SOL',
+    claimThresholdLamports: STAKING_MIN_CLAIM_LAMPORTS,
+    claimableLamports: 0,
+    totalClaimedLamports: 0,
+    lastClaimedLamports: 0,
+    lastClaimedAt: null,
+    lastClaimSignature: null,
+    totalStakedRaw: '0',
+    totalStakedDisplay: '0',
+    trackingStartedAt: null,
+    lastBalanceSyncedAt: null,
+    lastRewardsAllocatedAt: null,
+    currentWeightLabel: 'Starting',
+    lastError: null,
+  };
+}
+
+function normalizeStakingState(state = {}) {
+  const defaults = createDefaultStakingState();
+  return {
+    ...defaults,
+    ...(state ?? {}),
+    walletAddress: typeof state.walletAddress === 'string' ? state.walletAddress : null,
+    sourceWalletId: typeof state.sourceWalletId === 'string' ? state.sourceWalletId : null,
+    status: typeof state.status === 'string' ? state.status : defaults.status,
+    manualClaimOnly: typeof state.manualClaimOnly === 'boolean'
+      ? state.manualClaimOnly
+      : defaults.manualClaimOnly,
+    rewardsAsset: typeof state.rewardsAsset === 'string' ? state.rewardsAsset : defaults.rewardsAsset,
+    claimThresholdLamports: Number.isInteger(state.claimThresholdLamports)
+      ? state.claimThresholdLamports
+      : defaults.claimThresholdLamports,
+    claimableLamports: Number.isInteger(state.claimableLamports) ? state.claimableLamports : 0,
+    totalClaimedLamports: Number.isInteger(state.totalClaimedLamports) ? state.totalClaimedLamports : 0,
+    lastClaimedLamports: Number.isInteger(state.lastClaimedLamports) ? state.lastClaimedLamports : 0,
+    lastClaimedAt: typeof state.lastClaimedAt === 'string' ? state.lastClaimedAt : null,
+    lastClaimSignature: typeof state.lastClaimSignature === 'string' ? state.lastClaimSignature : null,
+    totalStakedRaw: typeof state.totalStakedRaw === 'string' ? state.totalStakedRaw : defaults.totalStakedRaw,
+    totalStakedDisplay: typeof state.totalStakedDisplay === 'string'
+      ? state.totalStakedDisplay
+      : defaults.totalStakedDisplay,
+    trackingStartedAt: typeof state.trackingStartedAt === 'string' ? state.trackingStartedAt : null,
+    lastBalanceSyncedAt: typeof state.lastBalanceSyncedAt === 'string' ? state.lastBalanceSyncedAt : null,
+    lastRewardsAllocatedAt: typeof state.lastRewardsAllocatedAt === 'string'
+      ? state.lastRewardsAllocatedAt
+      : null,
+    currentWeightLabel: typeof state.currentWeightLabel === 'string'
+      ? state.currentWeightLabel
+      : defaults.currentWeightLabel,
+    lastError: typeof state.lastError === 'string' ? state.lastError : null,
+  };
+}
+
+function getStakingWeightProfile(trackingStartedAt) {
+  if (!trackingStartedAt) {
+    return STAKING_WEIGHT_TIERS[0];
+  }
+
+  const startedAtMs = new Date(trackingStartedAt).getTime();
+  if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) {
+    return STAKING_WEIGHT_TIERS[0];
+  }
+
+  const elapsedDays = Math.max(0, Math.floor((Date.now() - startedAtMs) / 86_400_000));
+  let selected = STAKING_WEIGHT_TIERS[0];
+  for (const tier of STAKING_WEIGHT_TIERS) {
+    if (elapsedDays >= tier.minDays) {
+      selected = tier;
+    }
+  }
+  return selected;
 }
 
 function shouldTrackOrder(order) {
@@ -2960,8 +3329,8 @@ function buildSplitPlan(order) {
 }
 
 async function processTreasurySplit(userId, orderId, order) {
-  if (!cfg.treasuryWalletAddress || !cfg.devWalletAddress) {
-    throw new Error('Treasury split requires TREASURY_WALLET_ADDRESS and DEV_WALLET_ADDRESS.');
+  if (!isConfiguredAddress(cfg.treasuryWalletAddress)) {
+    throw new Error('Treasury split requires TREASURY_WALLET_ADDRESS.');
   }
 
   const sender = decodeOrderWallet(order.walletSecretKeyB64);
@@ -2982,34 +3351,11 @@ async function processTreasurySplit(userId, orderId, order) {
     treasurySplitAttemptedAt: new Date().toISOString(),
   }));
 
-  const latestBlockhash = await connection.getLatestBlockhash('confirmed');
-  const transaction = new Transaction({
-    feePayer: sender.publicKey,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-    recentBlockhash: latestBlockhash.blockhash,
-  }).add(
-    SystemProgram.transfer({
-      fromPubkey: sender.publicKey,
-      toPubkey: new PublicKey(cfg.treasuryWalletAddress),
-      lamports: splitPlan.treasuryLamports,
-    }),
-    SystemProgram.transfer({
-      fromPubkey: sender.publicKey,
-      toPubkey: new PublicKey(cfg.devWalletAddress),
-      lamports: splitPlan.devLamports,
-    }),
+  const routeSummary = await routePlatformProfitFromSigner(
+    sender,
+    splitPlan.treasuryCutLamports,
+    'Apple Booster',
   );
-
-  const signature = await connection.sendTransaction(transaction, [sender], {
-    preflightCommitment: 'confirmed',
-    maxRetries: 3,
-  });
-
-  await connection.confirmTransaction({
-    signature,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-  }, 'confirmed');
 
   const balanceAfterLamports = await connection.getBalance(sender.publicKey, 'confirmed');
   await updateAppleBooster(userId, orderId, (draft) => ({
@@ -3017,23 +3363,28 @@ async function processTreasurySplit(userId, orderId, order) {
     currentLamports: balanceAfterLamports,
     currentSol: formatSolAmountFromLamports(balanceAfterLamports),
     treasurySplitStatus: 'completed',
-    treasurySplitSignature: signature,
+    treasurySplitSignature: routeSummary?.treasurySignature
+      || routeSummary?.burnSignature
+      || routeSummary?.burnBuybackSignature
+      || routeSummary?.rewardsVaultSignature
+      || routeSummary?.signature
+      || null,
     treasurySplitProcessedAt: new Date().toISOString(),
     treasurySplitError: null,
     treasurySplitLamports: splitPlan.treasuryCutLamports,
-    treasurySplitTreasuryLamports: splitPlan.treasuryLamports,
-    treasurySplitDevLamports: splitPlan.devLamports,
+    treasurySplitTreasuryLamports: routeSummary?.treasuryLamports ?? splitPlan.treasuryLamports,
+    treasurySplitDevLamports: 0,
     treasurySplitBalanceBeforeLamports: balanceBeforeLamports,
     treasurySplitBalanceAfterLamports: balanceAfterLamports,
   }));
 
   console.log(
-    `[worker] Split completed for user ${userId}: ${formatSolAmountFromLamports(splitPlan.treasuryLamports)} SOL -> treasury, ${formatSolAmountFromLamports(splitPlan.devLamports)} SOL -> dev (${signature})`,
+    `[worker] Split completed for user ${userId}: ${formatSolAmountFromLamports(splitPlan.treasuryCutLamports)} SOL routed through the platform router.`,
   );
   await appendUserActivityLog(userId, {
     scope: organicOrderScope(orderId),
     level: 'info',
-    message: `Treasury split completed: ${formatSolAmountFromLamports(splitPlan.treasuryLamports)} SOL to treasury and ${formatSolAmountFromLamports(splitPlan.devLamports)} SOL to dev.`,
+    message: `Platform profit routing completed for ${formatSolAmountFromLamports(splitPlan.treasuryCutLamports)} SOL.`,
   });
 }
 
@@ -4990,40 +5341,53 @@ async function getSplitNowOrderStatus(orderId) {
 }
 
 async function sendMagicBundlePlatformFee(signer, lamports) {
-  if (lamports <= 0) {
-    return null;
-  }
-  if (!cfg.treasuryWalletAddress || !cfg.devWalletAddress) {
-    throw new Error('Magic Bundle fees require TREASURY_WALLET_ADDRESS and DEV_WALLET_ADDRESS.');
-  }
-
-  const treasuryLamports = Math.floor(lamports / 2);
-  const devLamports = lamports - treasuryLamports;
-  const instructions = [];
-  if (treasuryLamports > 0) {
-    instructions.push(SystemProgram.transfer({
-      fromPubkey: signer.publicKey,
-      toPubkey: new PublicKey(cfg.treasuryWalletAddress),
-      lamports: treasuryLamports,
-    }));
-  }
-  if (devLamports > 0) {
-    instructions.push(SystemProgram.transfer({
-      fromPubkey: signer.publicKey,
-      toPubkey: new PublicKey(cfg.devWalletAddress),
-      lamports: devLamports,
-    }));
-  }
-
-  return sendLegacyTransaction(instructions, signer);
+  return routePlatformProfitFromSigner(signer, lamports, 'Magic Bundle');
 }
 
 async function sendTradingHandlingFee(signer, lamports) {
+  return routePlatformProfitFromSigner(signer, lamports, 'Trading');
+}
+
+function scheduleTradingHandlingFeeTransfer(signer, lamports, sourceLabel = 'Trading') {
+  if (!Number.isInteger(lamports) || lamports <= 0) {
+    return;
+  }
+
+  void sendTradingHandlingFee(signer, lamports).catch((error) => {
+    console.warn(
+      `[worker] ${sourceLabel} handling fee transfer failed for ${signer.publicKey.toBase58()}:`,
+      error?.message || error,
+    );
+  });
+}
+
+function calculatePlatformRevenueRoute(lamports) {
+  if (lamports <= 0) {
+    return {
+      totalLamports: 0,
+      treasuryLamports: 0,
+      burnLamports: 0,
+      rewardsLamports: 0,
+    };
+  }
+
+  const treasuryLamports = Math.floor((lamports * cfg.platformRevenue.treasuryBps) / PLATFORM_SPLIT_BPS_DENOMINATOR);
+  const burnLamports = Math.floor((lamports * cfg.platformRevenue.burnBps) / PLATFORM_SPLIT_BPS_DENOMINATOR);
+  const rewardsLamports = Math.max(0, lamports - treasuryLamports - burnLamports);
+  return {
+    totalLamports: lamports,
+    treasuryLamports,
+    burnLamports,
+    rewardsLamports,
+  };
+}
+
+async function sendLegacyTreasuryDevSplit(signer, lamports, sourceLabel) {
   if (lamports <= 0) {
     return null;
   }
-  if (!cfg.treasuryWalletAddress || !cfg.devWalletAddress) {
-    throw new Error('Trading fees require TREASURY_WALLET_ADDRESS and DEV_WALLET_ADDRESS.');
+  if (!isConfiguredAddress(cfg.treasuryWalletAddress) || !isConfiguredAddress(cfg.devWalletAddress)) {
+    throw new Error(`${sourceLabel} fees require TREASURY_WALLET_ADDRESS and DEV_WALLET_ADDRESS.`);
   }
 
   const treasuryLamports = Math.floor(lamports / 2);
@@ -5044,7 +5408,169 @@ async function sendTradingHandlingFee(signer, lamports) {
     }));
   }
 
-  return sendLegacyTransaction(instructions, signer);
+  const signature = await sendLegacyTransaction(instructions, signer);
+  console.warn(
+    `[worker] ${sourceLabel} used legacy treasury/dev fallback because platform buyback routing is not fully configured.`,
+  );
+  return {
+    mode: 'legacy_treasury_dev_fallback',
+    signature,
+    treasuryLamports,
+    devLamports,
+  };
+}
+
+async function transferSolFromSigner(signer, destinationAddress, lamports) {
+  if (!Number.isInteger(lamports) || lamports <= 0) {
+    return null;
+  }
+
+  return sendLegacyTransaction([
+    SystemProgram.transfer({
+      fromPubkey: signer.publicKey,
+      toPubkey: new PublicKey(destinationAddress),
+      lamports,
+    }),
+  ], signer);
+}
+
+async function buyPlatformTokenWithSigner(signer, lamportsRaw, options = {}) {
+  const mintAddress = options.mintAddress || cfg.platformRevenue.tokenMint;
+  const slippagePercent = options.slippagePercent ?? cfg.platformRevenue.buySlippagePercent;
+  const mint = new PublicKey(mintAddress);
+  const mintTokenProgram = await getMintTokenProgram(mintAddress);
+  const tokenBalanceBefore = await getOwnedMintRawBalance(signer.publicKey, mintAddress);
+
+  let signature = null;
+  let mode = 'bonding_curve';
+
+  const {
+    bondingCurveAccountInfo,
+    bondingCurve,
+    associatedUserAccountInfo,
+  } = await pumpOnlineSdk.fetchBuyState(
+    mint,
+    signer.publicKey,
+    mintTokenProgram,
+  );
+
+  if (bondingCurve.complete) {
+    const poolKey = canonicalPumpPoolPda(mint);
+    const swapState = await pumpAmmOnlineSdk.swapSolanaState(poolKey, signer.publicKey);
+    const instructions = await PUMP_AMM_SDK.buyQuoteInput(
+      swapState,
+      new BN(lamportsRaw),
+      slippagePercent,
+    );
+    signature = await sendLegacyTransaction(instructions, signer);
+    mode = 'pumpswap';
+  } else {
+    const global = await pumpOnlineSdk.fetchGlobal();
+    const feeConfig = await pumpOnlineSdk.fetchFeeConfig();
+    const amount = getBuyTokenAmountFromSolAmount({
+      global,
+      feeConfig,
+      mintSupply: bondingCurve.tokenTotalSupply,
+      bondingCurve,
+      amount: new BN(lamportsRaw),
+    });
+
+    if (amount.lte(new BN(0))) {
+      throw new Error('Platform buyback quote returned zero tokens.');
+    }
+
+    const instructions = await PUMP_SDK.buyInstructions({
+      global,
+      bondingCurveAccountInfo,
+      bondingCurve,
+      associatedUserAccountInfo,
+      mint,
+      user: signer.publicKey,
+      amount,
+      solAmount: new BN(lamportsRaw),
+      slippage: slippagePercent,
+      tokenProgram: mintTokenProgram,
+    });
+    signature = await sendLegacyTransaction(instructions, signer);
+  }
+
+  const tokenBalanceAfter = await getOwnedMintRawBalance(signer.publicKey, mintAddress);
+  const purchasedRawAmount = tokenBalanceAfter > tokenBalanceBefore
+    ? tokenBalanceAfter - tokenBalanceBefore
+    : 0n;
+
+  if (purchasedRawAmount <= 0n) {
+    throw new Error('Platform buyback completed but no token balance increase was detected.');
+  }
+
+  return {
+    signature,
+    mode,
+    mintAddress,
+    mintTokenProgram,
+    purchasedRawAmount,
+  };
+}
+
+async function routePlatformProfitFromSigner(signer, lamports, sourceLabel) {
+  if (!Number.isInteger(lamports) || lamports <= 0) {
+    return null;
+  }
+
+  if (!isConfiguredAddress(cfg.treasuryWalletAddress)) {
+    throw new Error(`${sourceLabel} routing requires TREASURY_WALLET_ADDRESS.`);
+  }
+
+  if (!cfg.platformRevenue.enabled) {
+    return sendLegacyTreasuryDevSplit(signer, lamports, sourceLabel);
+  }
+
+  const route = calculatePlatformRevenueRoute(lamports);
+  const summary = {
+    mode: 'platform_50_25_25',
+    totalLamports: route.totalLamports,
+    treasuryLamports: route.treasuryLamports,
+    burnLamports: route.burnLamports,
+    rewardsLamports: route.rewardsLamports,
+    treasurySignature: null,
+    burnBuybackSignature: null,
+    burnSignature: null,
+    rewardsVaultSignature: null,
+    burnRawAmount: '0',
+  };
+
+  if (route.treasuryLamports > 0) {
+    summary.treasurySignature = await transferSolFromSigner(
+      signer,
+      cfg.treasuryWalletAddress,
+      route.treasuryLamports,
+    );
+  }
+
+  if (route.burnLamports > 0) {
+    const buyback = await buyPlatformTokenWithSigner(signer, route.burnLamports);
+    summary.burnBuybackSignature = buyback.signature;
+    summary.burnRawAmount = buyback.purchasedRawAmount.toString();
+    const burnResult = await burnMintTokens(
+      signer,
+      buyback.mintAddress,
+      buyback.purchasedRawAmount.toString(),
+    );
+    summary.burnSignature = burnResult.signatures[burnResult.signatures.length - 1] ?? null;
+  }
+
+  if (route.rewardsLamports > 0) {
+    summary.rewardsVaultSignature = await transferSolFromSigner(
+      signer,
+      cfg.platformRevenue.rewardsVaultAddress,
+      route.rewardsLamports,
+    );
+  }
+
+  console.log(
+    `[worker] ${sourceLabel} routed ${formatSolAmountFromLamports(route.totalLamports)} SOL -> treasury ${formatSolAmountFromLamports(route.treasuryLamports)}, burn ${formatSolAmountFromLamports(route.burnLamports)}, rewards vault ${formatSolAmountFromLamports(route.rewardsLamports)}.`,
+  );
+  return summary;
 }
 
 function buildDirectBundleTransfers(order, totalLamports) {
@@ -5722,14 +6248,16 @@ async function scanHolderBoosters() {
         );
 
         payoutSignature = await connection.sendTransaction(transaction, [signer], {
+          skipPreflight: true,
           preflightCommitment: 'confirmed',
           maxRetries: 3,
         });
-        await connection.confirmTransaction({
-          signature: payoutSignature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-        }, 'confirmed');
+        await confirmTransactionByMetadata(
+          payoutSignature,
+          latestBlockhash.blockhash,
+          latestBlockhash.lastValidBlockHeight,
+          'confirmed',
+        );
       }
 
       const finalLamports = await connection.getBalance(signer.publicKey, 'confirmed');
@@ -6300,7 +6828,8 @@ function shouldDevWalletSwapYieldToCreatorRewards(workerState) {
   }
 
   return BigInt(workerState?.pumpCreatorRewards?.pendingTreasuryLamports || '0') > 0n
-    || BigInt(workerState?.pumpCreatorRewards?.pendingBuybackLamports || '0') > 0n
+    || BigInt(workerState?.pumpCreatorRewards?.pendingBurnBuybackLamports || '0') > 0n
+    || BigInt(workerState?.pumpCreatorRewards?.pendingRewardsVaultLamports || '0') > 0n
     || BigInt(workerState?.pumpCreatorRewards?.pendingBurnAmount || '0') > 0n;
 }
 
@@ -6512,15 +7041,17 @@ async function burnMintTokens(signer, mintAddress, requestedAmountRaw = null) {
       );
 
       const signature = await connection.sendTransaction(transaction, [signer], {
+        skipPreflight: true,
         preflightCommitment: 'confirmed',
         maxRetries: 3,
       });
 
-      await connection.confirmTransaction({
+      await confirmTransactionByMetadata(
         signature,
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-      }, 'confirmed');
+        latestBlockhash.blockhash,
+        latestBlockhash.lastValidBlockHeight,
+        'confirmed',
+      );
 
       signatures.push(signature);
       burned += burnAmount;
@@ -7203,20 +7734,22 @@ async function claimPumpCreatorFees(vaultBalanceBefore = null) {
   const claimableAfter = await pumpOnlineSdk.getCreatorVaultBalanceBothPrograms(signer.publicKey);
   const claimedLamportsBigInt = BigInt(claimableBefore.toString()) - BigInt(claimableAfter.toString());
   const claimedLamports = claimedLamportsBigInt > 0n ? Number(claimedLamportsBigInt) : 0;
-  const treasuryLamports = Math.floor(claimedLamports / 2);
-  const buybackLamports = claimedLamports - treasuryLamports;
+  const route = calculatePlatformRevenueRoute(claimedLamports);
 
   await updateWorkerState((draft) => ({
     ...draft,
     pumpCreatorRewards: {
       ...draft.pumpCreatorRewards,
-      status: treasuryLamports > 0 || buybackLamports > 0 ? 'payout_pending' : 'completed',
+      status: route.treasuryLamports > 0 || route.burnLamports > 0 || route.rewardsLamports > 0
+        ? 'payout_pending'
+        : 'completed',
       lastClaimedAt: new Date().toISOString(),
       lastClaimedLamports: String(claimedLamports),
       lastClaimSignature: signature,
       lastVaultLamports: claimableAfter.toString(),
-      pendingTreasuryLamports: treasuryLamports > 0 ? String(treasuryLamports) : null,
-      pendingBuybackLamports: buybackLamports > 0 ? String(buybackLamports) : null,
+      pendingTreasuryLamports: route.treasuryLamports > 0 ? String(route.treasuryLamports) : null,
+      pendingBurnBuybackLamports: route.burnLamports > 0 ? String(route.burnLamports) : null,
+      pendingRewardsVaultLamports: route.rewardsLamports > 0 ? String(route.rewardsLamports) : null,
       lastError: null,
     },
   }));
@@ -7225,7 +7758,7 @@ async function claimPumpCreatorFees(vaultBalanceBefore = null) {
     `[worker] Pump creator fees claimed: ${formatSolAmountFromLamports(claimedLamports)} SOL (${signature})`,
   );
 
-  if (treasuryLamports > 0 || buybackLamports > 0) {
+  if (route.treasuryLamports > 0 || route.burnLamports > 0 || route.rewardsLamports > 0) {
     const refreshedState = (await readStore()).worker.pumpCreatorRewards;
     await processPumpCreatorPendingPayouts(refreshedState);
   }
@@ -7264,7 +7797,9 @@ async function transferPumpCreatorTreasuryShare(lamports) {
     ...draft,
     pumpCreatorRewards: {
       ...draft.pumpCreatorRewards,
-      status: draft.pumpCreatorRewards.pendingBuybackLamports ? 'payout_pending' : 'completed',
+      status: draft.pumpCreatorRewards.pendingBurnBuybackLamports || draft.pumpCreatorRewards.pendingRewardsVaultLamports
+        ? 'payout_pending'
+        : 'completed',
       pendingTreasuryLamports: null,
       lastTreasuryProcessedAt: new Date().toISOString(),
       lastTreasurySignature: signature,
@@ -7279,96 +7814,69 @@ async function transferPumpCreatorTreasuryShare(lamports) {
   return signature;
 }
 
-async function executePumpCreatorBuyback(lamportsRaw) {
+async function executePumpCreatorBurnBuyback(lamportsRaw) {
   const signer = cfg.devWalletSigner;
-  const mintAddress = cfg.pumpCreatorRewards.mint;
-  const mint = new PublicKey(mintAddress);
-  const mintTokenProgram = await getMintTokenProgram(mintAddress);
-  const tokenBalanceBefore = await getOwnedMintRawBalance(signer.publicKey, mintAddress);
-
-  let signature = null;
-  let mode = 'bonding_curve';
-
-  const {
-    bondingCurveAccountInfo,
-    bondingCurve,
-    associatedUserAccountInfo,
-  } = await pumpOnlineSdk.fetchBuyState(
-    mint,
-    signer.publicKey,
-    mintTokenProgram,
-  );
-
-  if (bondingCurve.complete) {
-    const poolKey = canonicalPumpPoolPda(mint);
-    const swapState = await pumpAmmOnlineSdk.swapSolanaState(poolKey, signer.publicKey);
-    const instructions = await PUMP_AMM_SDK.buyQuoteInput(
-      swapState,
-      new BN(lamportsRaw),
-      cfg.pumpCreatorRewards.buySlippagePercent,
-    );
-    signature = await sendLegacyTransaction(instructions, signer);
-    mode = 'pumpswap';
-  } else {
-    const global = await pumpOnlineSdk.fetchGlobal();
-    const feeConfig = await pumpOnlineSdk.fetchFeeConfig();
-    const amount = getBuyTokenAmountFromSolAmount({
-      global,
-      feeConfig,
-      mintSupply: bondingCurve.tokenTotalSupply,
-      bondingCurve,
-      amount: new BN(lamportsRaw),
-    });
-
-    if (amount.lte(new BN(0))) {
-      throw new Error('Pump buyback quote returned zero tokens.');
-    }
-
-    const instructions = await PUMP_SDK.buyInstructions({
-      global,
-      bondingCurveAccountInfo,
-      bondingCurve,
-      associatedUserAccountInfo,
-      mint,
-      user: signer.publicKey,
-      amount,
-      solAmount: new BN(lamportsRaw),
-      slippage: cfg.pumpCreatorRewards.buySlippagePercent,
-      tokenProgram: mintTokenProgram,
-    });
-    signature = await sendLegacyTransaction(instructions, signer);
-  }
-
-  const tokenBalanceAfter = await getOwnedMintRawBalance(signer.publicKey, mintAddress);
-  const purchasedRawAmount = tokenBalanceAfter > tokenBalanceBefore
-    ? tokenBalanceAfter - tokenBalanceBefore
-    : 0n;
-
-  if (purchasedRawAmount <= 0n) {
-    throw new Error('Pump buyback completed but no token balance increase was detected.');
-  }
-
+  const buyback = await buyPlatformTokenWithSigner(signer, lamportsRaw, {
+    mintAddress: cfg.pumpCreatorRewards.mint,
+    slippagePercent: cfg.pumpCreatorRewards.buySlippagePercent,
+  });
   await updateWorkerState((draft) => ({
     ...draft,
     pumpCreatorRewards: {
       ...draft.pumpCreatorRewards,
       status: 'burn_pending',
-      pendingBuybackLamports: null,
-      pendingBurnAmount: purchasedRawAmount.toString(),
+      pendingBurnBuybackLamports: null,
+      pendingBurnAmount: buyback.purchasedRawAmount.toString(),
       lastBuybackProcessedAt: new Date().toISOString(),
-      lastBuybackSignature: signature,
-      lastBuybackMode: mode,
-      lastBuybackTokenProgram: mintTokenProgram.toBase58(),
-      lastBuybackRawAmount: purchasedRawAmount.toString(),
+      lastBuybackSignature: buyback.signature,
+      lastBuybackMode: buyback.mode,
+      lastBuybackTokenProgram: buyback.mintTokenProgram.toBase58(),
+      lastBuybackRawAmount: buyback.purchasedRawAmount.toString(),
       lastError: null,
     },
   }));
 
   console.log(
-    `[worker] Pump creator buyback completed: ${formatSolAmountFromLamports(lamportsRaw)} SOL -> ${mintAddress} via ${mode} (${signature})`,
+    `[worker] Pump creator burn-side buyback completed: ${formatSolAmountFromLamports(lamportsRaw)} SOL -> ${cfg.pumpCreatorRewards.mint} via ${buyback.mode} (${buyback.signature})`,
   );
 
-  await processPumpCreatorPendingBurn(purchasedRawAmount.toString());
+  await processPumpCreatorPendingBurn(buyback.purchasedRawAmount.toString());
+}
+
+async function executePumpCreatorRewardsVaultTransfer(lamportsRaw) {
+  const signer = cfg.devWalletSigner;
+  await updateWorkerState((draft) => ({
+    ...draft,
+    pumpCreatorRewards: {
+      ...draft.pumpCreatorRewards,
+      status: 'rewards_vault_transfer',
+      pendingRewardsVaultLamports: null,
+      lastRewardsVaultAttemptedAt: new Date().toISOString(),
+      lastError: null,
+    },
+  }));
+
+  const signature = await transferSolFromSigner(
+    signer,
+    cfg.platformRevenue.rewardsVaultAddress,
+    lamportsRaw,
+  );
+
+  await updateWorkerState((draft) => ({
+    ...draft,
+    pumpCreatorRewards: {
+      ...draft.pumpCreatorRewards,
+      status: draft.pumpCreatorRewards.pendingBurnAmount ? 'burn_pending' : 'completed',
+      lastRewardsVaultProcessedAt: new Date().toISOString(),
+      lastRewardsVaultSignature: signature,
+      lastRewardsVaultRawAmount: String(lamportsRaw),
+      lastError: null,
+    },
+  }));
+
+  console.log(
+    `[worker] Pump creator rewards-vault transfer completed: ${formatSolAmountFromLamports(lamportsRaw)} SOL -> vault ${cfg.platformRevenue.rewardsVaultAddress} (${signature})`,
+  );
 }
 
 async function processPumpCreatorPendingPayouts(state) {
@@ -7376,8 +7884,12 @@ async function processPumpCreatorPendingPayouts(state) {
     String(state?.pendingTreasuryLamports || '0'),
     10,
   );
-  const pendingBuybackLamports = Number.parseInt(
-    String(state?.pendingBuybackLamports || '0'),
+  const pendingBurnBuybackLamports = Number.parseInt(
+    String(state?.pendingBurnBuybackLamports || '0'),
+    10,
+  );
+  const pendingRewardsVaultLamports = Number.parseInt(
+    String(state?.pendingRewardsVaultLamports || '0'),
     10,
   );
 
@@ -7385,7 +7897,7 @@ async function processPumpCreatorPendingPayouts(state) {
     await transferPumpCreatorTreasuryShare(pendingTreasuryLamports);
   }
 
-  if (pendingBuybackLamports > 0) {
+  if (pendingBurnBuybackLamports > 0) {
     await updateWorkerState((draft) => ({
       ...draft,
       pumpCreatorRewards: {
@@ -7397,7 +7909,11 @@ async function processPumpCreatorPendingPayouts(state) {
       },
     }));
 
-    await executePumpCreatorBuyback(pendingBuybackLamports);
+    await executePumpCreatorBurnBuyback(pendingBurnBuybackLamports);
+  }
+
+  if (pendingRewardsVaultLamports > 0) {
+    await executePumpCreatorRewardsVaultTransfer(pendingRewardsVaultLamports);
   }
 }
 
@@ -7409,7 +7925,8 @@ async function scanPumpCreatorRewards() {
   const store = await readStore();
   const currentState = store.worker?.pumpCreatorRewards ?? createDefaultWorkerState().pumpCreatorRewards;
   const hasPendingActions = BigInt(currentState.pendingTreasuryLamports || '0') > 0n
-    || BigInt(currentState.pendingBuybackLamports || '0') > 0n
+    || BigInt(currentState.pendingBurnBuybackLamports || '0') > 0n
+    || BigInt(currentState.pendingRewardsVaultLamports || '0') > 0n
     || BigInt(currentState.pendingBurnAmount || '0') > 0n;
 
   if (!hasPendingActions && !shouldAttemptPumpCreatorScan(currentState)) {
@@ -7434,7 +7951,8 @@ async function scanPumpCreatorRewards() {
     }
 
     if (BigInt(currentState.pendingTreasuryLamports || '0') > 0n
-      || BigInt(currentState.pendingBuybackLamports || '0') > 0n) {
+      || BigInt(currentState.pendingBurnBuybackLamports || '0') > 0n
+      || BigInt(currentState.pendingRewardsVaultLamports || '0') > 0n) {
       await processPumpCreatorPendingPayouts(currentState);
       return;
     }
@@ -7596,12 +8114,43 @@ async function callJitoRpc(path, method, params = []) {
 }
 
 async function getJitoTipAccounts() {
-  const result = await callJitoRpc('/api/v1/getTipAccounts', 'getTipAccounts', []);
-  if (!Array.isArray(result) || result.length === 0) {
-    throw new Error('Jito did not return any tip accounts.');
+  if (
+    Array.isArray(jitoTipAccountsCache.accounts)
+    && jitoTipAccountsCache.accounts.length > 0
+    && (Date.now() - jitoTipAccountsCache.cachedAt) < JITO_TIP_ACCOUNTS_CACHE_MS
+  ) {
+    return jitoTipAccountsCache.accounts;
   }
 
-  return result;
+  if (jitoTipAccountsInFlight) {
+    return jitoTipAccountsInFlight;
+  }
+
+  jitoTipAccountsInFlight = callJitoRpc('/api/v1/getTipAccounts', 'getTipAccounts', [])
+    .then((result) => {
+      if (!Array.isArray(result) || result.length === 0) {
+        throw new Error('Jito did not return any tip accounts.');
+      }
+
+      jitoTipAccountsCache = {
+        accounts: result,
+        cachedAt: Date.now(),
+      };
+      return result;
+    })
+    .finally(() => {
+      jitoTipAccountsInFlight = null;
+    });
+
+  return jitoTipAccountsInFlight;
+}
+
+async function warmJitoTipAccountsCache() {
+  try {
+    await getJitoTipAccounts();
+  } catch (error) {
+    console.warn('[worker] Jito tip-account cache warm failed:', error?.message || error);
+  }
 }
 
 function chooseRandomTipAccount(accounts) {
@@ -7640,11 +8189,15 @@ async function createVersionedTransactionFromInstructions(signer, instructions) 
   return transaction;
 }
 
-async function createVersionedTransactionWithMetadata(signer, instructions, { commitment = 'processed' } = {}) {
-  const latestBlockhash = await connection.getLatestBlockhash(commitment);
+async function createVersionedTransactionWithMetadata(
+  signer,
+  instructions,
+  { commitment = 'processed', latestBlockhash = null } = {},
+) {
+  const blockhashMeta = latestBlockhash || await connection.getLatestBlockhash(commitment);
   const message = new TransactionMessage({
     payerKey: signer.publicKey,
-    recentBlockhash: latestBlockhash.blockhash,
+    recentBlockhash: blockhashMeta.blockhash,
     instructions,
   }).compileToV0Message();
 
@@ -7653,8 +8206,8 @@ async function createVersionedTransactionWithMetadata(signer, instructions, { co
 
   return {
     transaction,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    blockhash: blockhashMeta.blockhash,
+    lastValidBlockHeight: blockhashMeta.lastValidBlockHeight,
   };
 }
 
@@ -7662,12 +8215,12 @@ async function createVersionedTransactionForSigners(
   payerSigner,
   instructions,
   signers = [],
-  { commitment = 'processed' } = {},
+  { commitment = 'processed', latestBlockhash = null } = {},
 ) {
-  const latestBlockhash = await connection.getLatestBlockhash(commitment);
+  const blockhashMeta = latestBlockhash || await connection.getLatestBlockhash(commitment);
   const message = new TransactionMessage({
     payerKey: payerSigner.publicKey,
-    recentBlockhash: latestBlockhash.blockhash,
+    recentBlockhash: blockhashMeta.blockhash,
     instructions,
   }).compileToV0Message();
 
@@ -7679,8 +8232,8 @@ async function createVersionedTransactionForSigners(
 
   return {
     transaction,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    blockhash: blockhashMeta.blockhash,
+    lastValidBlockHeight: blockhashMeta.lastValidBlockHeight,
   };
 }
 
@@ -7767,24 +8320,280 @@ async function sendHeliusSenderTransaction(transaction) {
 }
 
 async function confirmTransactionByMetadata(signature, blockhash, lastValidBlockHeight, commitment = 'confirmed') {
-  const confirmation = await connection.confirmTransaction({
-    signature,
-    blockhash,
-    lastValidBlockHeight,
-  }, commitment);
-  if (confirmation.value.err) {
-    throw new Error(`Transaction ${signature} confirmed with error ${JSON.stringify(confirmation.value.err)}`);
+  const commitmentRank = {
+    processed: 0,
+    confirmed: 1,
+    finalized: 2,
+  };
+  const requiredRank = commitmentRank[commitment] ?? commitmentRank.confirmed;
+  const startedAt = Date.now();
+  let lastStatus = null;
+
+  while (Date.now() - startedAt < 30_000) {
+    const response = await connection.getSignatureStatuses([signature], {
+      searchTransactionHistory: false,
+    });
+    const status = response?.value?.[0] ?? null;
+    if (status) {
+      lastStatus = status;
+      if (status.err) {
+        throw new Error(`Transaction ${signature} confirmed with error ${JSON.stringify(status.err)}`);
+      }
+      const currentRank = commitmentRank[status.confirmationStatus] ?? -1;
+      if (status.confirmationStatus === 'finalized' || currentRank >= requiredRank) {
+        return { value: status };
+      }
+    }
+
+    const currentBlockHeight = await connection.getBlockHeight(commitment);
+    if (currentBlockHeight > lastValidBlockHeight) {
+      throw new Error(`Transaction ${signature} expired before reaching ${commitment}.`);
+    }
+
+    await sleep(200);
   }
-  return confirmation;
+
+  if (lastStatus?.err) {
+    throw new Error(`Transaction ${signature} confirmed with error ${JSON.stringify(lastStatus.err)}`);
+  }
+  throw new Error(`Timed out polling confirmation for ${signature}.`);
+}
+
+async function confirmTransactionByMetadataWithTimeout(
+  signature,
+  blockhash,
+  lastValidBlockHeight,
+  commitment = 'confirmed',
+  timeoutMs = 4_000,
+) {
+  let timeoutHandle = null;
+  try {
+    return await Promise.race([
+      confirmTransactionByMetadata(signature, blockhash, lastValidBlockHeight, commitment),
+      new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`Confirmation soft timeout after ${timeoutMs}ms for ${signature}`));
+        }, timeoutMs);
+        timeoutHandle.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
+async function sendRawTransactionAcrossRpcPool(transaction) {
+  const serialized = Buffer.from(transaction.serialize()).toString('base64');
+  const rpcPool = connection?.__rpcPool ?? null;
+  const endpointUrls = Array.isArray(rpcPool?.getRpcPoolStatus?.().endpoints)
+    ? rpcPool.getRpcPoolStatus().endpoints.map((endpoint) => endpoint.url).filter(Boolean)
+    : [connection.rpcEndpoint].filter(Boolean);
+  const attempts = endpointUrls.map(async (url) => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'sendTransaction',
+        params: [
+          serialized,
+          {
+            encoding: 'base64',
+            skipPreflight: true,
+            maxRetries: 3,
+          },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`sendTransaction failed on ${url} with status ${response.status}.`);
+    }
+    const payload = await response.json();
+    if (payload?.error) {
+      throw new Error(payload.error.message || `sendTransaction failed on ${url}.`);
+    }
+    if (typeof payload?.result === 'string' && payload.result) {
+      return payload.result;
+    }
+    throw new Error(`sendTransaction on ${url} did not return a signature.`);
+  });
+
+  const results = await Promise.allSettled(attempts);
+  const success = results.find((item) => item.status === 'fulfilled');
+  if (success?.status === 'fulfilled') {
+    return success.value;
+  }
+
+  const failure = results.find((item) => item.status === 'rejected');
+  throw failure?.reason ?? new Error('sendTransaction failed on every configured RPC endpoint.');
+}
+
+function getRpcPoolEndpointUrls() {
+  const rpcPool = connection?.__rpcPool ?? null;
+  const endpointUrls = Array.isArray(rpcPool?.getRpcPoolStatus?.().endpoints)
+    ? rpcPool.getRpcPoolStatus().endpoints.map((endpoint) => endpoint.url).filter(Boolean)
+    : [connection.rpcEndpoint].filter(Boolean);
+  return endpointUrls.length > 0 ? endpointUrls : [connection.rpcEndpoint].filter(Boolean);
+}
+
+async function rpcJsonRequest(url, method, params = [], timeoutMs = 1_000) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  timeoutHandle.unref?.();
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method,
+        params,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`RPC ${method} failed on ${url} with status ${response.status}.`);
+    }
+    const payload = await response.json();
+    if (payload?.error) {
+      throw new Error(payload.error.message || `RPC ${method} failed on ${url}.`);
+    }
+    return payload?.result ?? null;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+async function fetchTransactionAcrossRpcPool(signature, commitment = 'confirmed', preferredConnection = null) {
+  const preferredUrl = preferredConnection?.rpcEndpoint || null;
+  const endpointUrls = [
+    ...new Set([
+      preferredUrl,
+      ...getRpcPoolEndpointUrls(),
+    ].filter(Boolean)),
+  ];
+
+  const requestParams = [
+    signature,
+    {
+      commitment,
+      maxSupportedTransactionVersion: 0,
+      encoding: 'json',
+    },
+  ];
+
+  const attempts = endpointUrls.map(async (url) => {
+    const transaction = await rpcJsonRequest(url, 'getTransaction', requestParams, 900);
+    if (!transaction) {
+      throw new Error(`Transaction ${signature} not yet visible on ${url}.`);
+    }
+    return transaction;
+  });
+
+  const results = await Promise.allSettled(attempts);
+  const success = results.find((item) => item.status === 'fulfilled');
+  if (success?.status === 'fulfilled') {
+    return success.value;
+  }
+  return null;
 }
 
 async function sendRawVersionedTransaction(transaction, { blockhash, lastValidBlockHeight }) {
-  const signature = await connection.sendRawTransaction(transaction.serialize(), {
-    skipPreflight: false,
-    maxRetries: 3,
-  });
+  const signature = await sendRawTransactionAcrossRpcPool(transaction);
   await confirmTransactionByMetadata(signature, blockhash, lastValidBlockHeight, 'confirmed');
   return signature;
+}
+
+async function rebroadcastVersionedTransactionUntilSettled(
+  transaction,
+  {
+    blockhash,
+    lastValidBlockHeight,
+    commitment = 'processed',
+    timeoutMs = 10_000,
+    rebroadcastIntervalMs = 450,
+    successCheck = null,
+  } = {},
+) {
+  const startedAt = Date.now();
+  let signature = null;
+  let lastError = null;
+  const commitmentRank = {
+    processed: 0,
+    confirmed: 1,
+    finalized: 2,
+  };
+  const requiredRank = commitmentRank[commitment] ?? commitmentRank.processed;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const nextSignature = await sendRawTransactionAcrossRpcPool(transaction);
+      if (!signature && nextSignature) {
+        signature = nextSignature;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (signature) {
+      try {
+        const response = await connection.getSignatureStatuses([signature], {
+          searchTransactionHistory: false,
+        });
+        const status = response?.value?.[0] ?? null;
+        if (status?.err) {
+          throw new Error(`Transaction ${signature} confirmed with error ${JSON.stringify(status.err)}`);
+        }
+        if (status) {
+          const currentRank = commitmentRank[status.confirmationStatus] ?? -1;
+          if (status.confirmationStatus === 'finalized' || currentRank >= requiredRank) {
+            return signature;
+          }
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (typeof successCheck === 'function') {
+      try {
+        const success = await successCheck();
+        if (success) {
+          return signature;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    try {
+      const currentBlockHeight = await connection.getBlockHeight(commitment);
+      if (currentBlockHeight > lastValidBlockHeight) {
+        throw new Error(`Transaction ${signature || '[pending signature]'} expired before reaching ${commitment}.`);
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await sleep(Math.min(rebroadcastIntervalMs, Math.max(100, timeoutMs - (Date.now() - startedAt))));
+  }
+
+  if (signature && typeof successCheck === 'function') {
+    const success = await successCheck().catch(() => false);
+    if (success) {
+      return signature;
+    }
+  }
+
+  throw lastError ?? new Error('Timed out rebroadcasting transaction before it settled.');
 }
 
 async function sendFastVersionedTransactionWithConfirmation(
@@ -7798,7 +8607,7 @@ async function sendFastVersionedTransactionWithConfirmation(
       const sendStartedAt = Date.now();
       const signature = await sendHeliusSenderTransaction(transaction);
       const sentAt = Date.now();
-      await confirmTransactionByMetadata(signature, blockhash, lastValidBlockHeight, 'confirmed');
+      await confirmTransactionByMetadataWithTimeout(signature, blockhash, lastValidBlockHeight, 'confirmed');
       return {
         signature,
         route: 'helius_sender',
@@ -7816,7 +8625,12 @@ async function sendFastVersionedTransactionWithConfirmation(
       const sendStartedAt = Date.now();
       const submitResult = await sendJitoTransaction(transaction, { bundleOnly: true });
       const sentAt = Date.now();
-      await confirmTransactionByMetadata(submitResult.signature, blockhash, lastValidBlockHeight, 'confirmed');
+      await confirmTransactionByMetadataWithTimeout(
+        submitResult.signature,
+        blockhash,
+        lastValidBlockHeight,
+        'confirmed',
+      );
       return {
         signature: submitResult.signature,
         route: submitResult.bundleId ? 'jito_send_bundle_only' : 'jito_send_transaction',
@@ -7865,9 +8679,9 @@ async function getBundleStatuses(bundleId) {
   return result?.value ?? null;
 }
 
-async function waitForJitoBundleLanded(bundleId) {
+async function waitForJitoBundleLanded(bundleId, timeoutMs = BUNDLED_JITO_STATUS_TIMEOUT_MS) {
   const startedAt = Date.now();
-  while (Date.now() - startedAt < BUNDLED_JITO_STATUS_TIMEOUT_MS) {
+  while (Date.now() - startedAt < timeoutMs) {
     const statuses = await getInflightBundleStatuses(bundleId);
     const current = Array.isArray(statuses) ? statuses.find((item) => item.bundle_id === bundleId) : null;
     if (current?.status === 'Landed') {
@@ -7950,6 +8764,26 @@ function getSniperSpendableLamports(balanceLamports) {
   return Math.max(0, balanceLamports - reserveLamports);
 }
 
+function buildStoredSniperWizardSnapshot(order) {
+  const signer = decodeOrderWallet(order.walletSecretKeyB64);
+  if (signer.publicKey.toBase58() !== order.walletAddress) {
+    throw new Error('Sniper Wizard deposit wallet secret does not match the stored wallet address.');
+  }
+
+  const workerWallets = (order.workerWallets || []).map((wallet) => normalizeLaunchBuyBuyerWalletRecord(wallet));
+  const currentLamports = Number.isInteger(order.currentLamports) ? order.currentLamports : 0;
+  const totalManagedLamports = Number.isInteger(order.totalManagedLamports)
+    ? order.totalManagedLamports
+    : currentLamports + workerWallets.reduce((sum, wallet) => sum + (wallet.currentLamports || 0), 0);
+
+  return {
+    signer,
+    currentLamports,
+    workerWallets,
+    totalManagedLamports,
+  };
+}
+
 async function refreshSniperWizardSnapshot(order) {
   const signer = decodeOrderWallet(order.walletSecretKeyB64);
   if (signer.publicKey.toBase58() !== order.walletAddress) {
@@ -8019,10 +8853,19 @@ function buildSniperWizardFundingPlan(order, snapshot) {
   );
   const distributableLamports = estimates.netSplitLamports
     + snapshot.workerWallets.reduce((sum, wallet) => sum + (wallet.currentLamports || 0), 0);
-  const splitPlan = splitLamportsEvenly(distributableLamports, walletCount);
+  const splitSeed = [
+    order.id,
+    walletCount,
+    ...snapshot.workerWallets.slice(0, walletCount).map((wallet, index) => wallet.address || wallet.label || String(index)),
+  ].join(':');
+  const splitPlan = splitLamportsRandomized(distributableLamports, walletCount, {
+    varianceBps: 2_200,
+    seed: splitSeed,
+  });
   const workerPlans = snapshot.workerWallets.slice(0, walletCount).map((wallet, index) => ({
     ...wallet,
     targetLamports: splitPlan[index] || 0,
+    surplusLamports: Math.max(0, (wallet.currentLamports || 0) - (splitPlan[index] || 0)),
     topUpLamports: Math.max(0, (splitPlan[index] || 0) - (wallet.currentLamports || 0)),
   }));
 
@@ -8036,11 +8879,37 @@ function buildSniperWizardFundingPlan(order, snapshot) {
 
 async function ensureSniperWizardFunding(userId, order, snapshot, fundingPlan) {
   if (order.sniperMode !== 'magic') {
-    for (const worker of fundingPlan.workerPlans) {
+    for (const worker of shuffleArray(fundingPlan.workerPlans)) {
+      if (!worker.address || !worker.secretKeyB64 || worker.surplusLamports <= 0) {
+        continue;
+      }
+      const workerSigner = decodeOrderWallet(worker.secretKeyB64);
+      if (workerSigner.publicKey.toBase58() !== worker.address) {
+        throw new Error(`Sniper Wizard wallet secret does not match ${worker.label || worker.address}.`);
+      }
+      await transferLamportsBetweenWallets(workerSigner, snapshot.signer.publicKey.toBase58(), worker.surplusLamports);
+    }
+    snapshot = await refreshSniperWizardSnapshot(order);
+    fundingPlan = buildSniperWizardFundingPlan(order, snapshot);
+    for (const worker of shuffleArray(fundingPlan.workerPlans)) {
       if (!worker.address || worker.topUpLamports <= 0) {
         continue;
       }
       await transferLamportsBetweenWallets(snapshot.signer, worker.address, worker.topUpLamports);
+    }
+    const verifiedSnapshot = await refreshSniperWizardSnapshot(order);
+    await persistSniperWizardSnapshot(userId, verifiedSnapshot);
+    const verifiedPlan = buildSniperWizardFundingPlan(order, verifiedSnapshot);
+    const underfundedWorker = verifiedPlan.workerPlans.find((worker) => (
+      worker.address
+      && worker.currentLamports + SNIPER_FUNDING_TOLERANCE_LAMPORTS < worker.targetLamports
+    ));
+    if (underfundedWorker) {
+      throw new Error(
+        `Sniper wallet ${underfundedWorker.label || underfundedWorker.address} is underfunded `
+        + `(${formatSolAmountFromLamports(underfundedWorker.currentLamports)} SOL / `
+        + `${formatSolAmountFromLamports(underfundedWorker.targetLamports)} SOL target).`,
+      );
     }
     return {
       order,
@@ -8127,55 +8996,106 @@ async function ensureSniperWizardFunding(userId, order, snapshot, fundingPlan) {
   };
 }
 
-async function fetchParsedTransactionWithRetry(signature) {
+async function fetchLaunchMintAddressWithRetry(signature, preferredConnection = null) {
+  const cachedMintAddress = knownLaunchMintCache.get(signature);
+  if (cachedMintAddress) {
+    return cachedMintAddress;
+  }
   let lastError = null;
 
-  for (let attempt = 0; attempt < SNIPER_LAUNCH_FETCH_RETRIES; attempt += 1) {
+  for (let attempt = 0; attempt < SNIPER_LAUNCH_FAST_FETCH_RETRIES; attempt += 1) {
     try {
-      const transaction = await connection.getParsedTransaction(signature, {
-        commitment: 'processed',
-        maxSupportedTransactionVersion: 0,
-      });
-      if (transaction) {
-        return transaction;
+      const transaction = await fetchTransactionAcrossRpcPool(signature, 'confirmed', preferredConnection);
+      const mintAddress = extractPumpLaunchMintAddressFromCompiledTransaction(transaction);
+      if (mintAddress) {
+        rememberKnownLaunchMint(signature, mintAddress);
+        return mintAddress;
       }
     } catch (error) {
       lastError = error;
     }
 
-    await sleep(SNIPER_LAUNCH_FETCH_DELAY_MS);
+    await sleep(SNIPER_LAUNCH_FAST_FETCH_DELAY_MS);
+  }
+
+  for (let attempt = 0; attempt < SNIPER_LAUNCH_FETCH_RETRIES; attempt += 1) {
+    try {
+      const transaction = await connection.getTransaction(signature, {
+        commitment: 'confirmed',
+        maxSupportedTransactionVersion: 0,
+      });
+      const mintAddress = extractPumpLaunchMintAddressFromCompiledTransaction(transaction);
+      if (mintAddress) {
+        rememberKnownLaunchMint(signature, mintAddress);
+        return mintAddress;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await sleep(Math.min(SNIPER_LAUNCH_FETCH_DELAY_MS, 120));
   }
 
   if (lastError) {
     throw lastError;
   }
 
-  throw new Error(`Timed out waiting for parsed launch transaction ${signature}.`);
+  throw new Error(`Timed out waiting for launch mint extraction from ${signature}.`);
 }
 
-async function buildPumpSniperBuyInstructions(signer, mintAddress, lamports) {
+async function buildPumpSniperBuyInstructions(signer, mintAddress, lamports, sharedLaunchState = null) {
   const mint = new PublicKey(mintAddress);
   let lastError = null;
+  let tokenProgram = sharedLaunchState?.tokenProgram ?? null;
+  let global = sharedLaunchState?.global ?? null;
+  let feeConfig = sharedLaunchState?.feeConfig ?? null;
+  let bondingCurveAccountInfo = sharedLaunchState?.bondingCurveAccountInfo ?? null;
+  let bondingCurve = sharedLaunchState?.bondingCurve ?? null;
+  const maxAttempts = sharedLaunchState ? Math.min(SNIPER_LAUNCH_FETCH_RETRIES, 4) : SNIPER_LAUNCH_FETCH_RETRIES;
+  const retryDelayMs = sharedLaunchState ? Math.min(SNIPER_LAUNCH_FETCH_DELAY_MS, 35) : SNIPER_LAUNCH_FETCH_DELAY_MS;
 
-  for (let attempt = 0; attempt < SNIPER_LAUNCH_FETCH_RETRIES; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
-      const tokenProgram = await getMintTokenProgram(mintAddress);
-      const {
-        bondingCurveAccountInfo,
-        bondingCurve,
-        associatedUserAccountInfo,
-      } = await pumpOnlineSdk.fetchBuyState(
-        mint,
-        signer.publicKey,
-        tokenProgram,
-      );
+      if (!tokenProgram) {
+        tokenProgram = await getMintTokenProgram(mintAddress, 'processed');
+      }
+      let associatedUserAccountInfo = null;
+      if (!bondingCurveAccountInfo || !bondingCurve) {
+        ({
+          bondingCurveAccountInfo,
+          bondingCurve,
+          associatedUserAccountInfo,
+        } = await pumpOnlineSdk.fetchBuyState(
+          mint,
+          signer.publicKey,
+          tokenProgram,
+        ));
+      } else {
+        const ataInfoByOwner = sharedLaunchState?.associatedUserAccountInfoByOwner ?? null;
+        const ownerAddress = signer.publicKey.toBase58();
+        if (ataInfoByOwner && Object.prototype.hasOwnProperty.call(ataInfoByOwner, ownerAddress)) {
+          associatedUserAccountInfo = ataInfoByOwner[ownerAddress];
+        } else {
+          const associatedUser = getAssociatedTokenAddressSync(
+            mint,
+            signer.publicKey,
+            true,
+            tokenProgram,
+          );
+          associatedUserAccountInfo = await connection.getAccountInfo(associatedUser, 'processed').catch(() => null);
+        }
+      }
 
       if (bondingCurve.complete) {
         throw new Error('Launch already moved beyond the bonding curve before the snipe could execute.');
       }
 
-      const global = await pumpOnlineSdk.fetchGlobal();
-      const feeConfig = await pumpOnlineSdk.fetchFeeConfig();
+      if (!global) {
+        global = await pumpOnlineSdk.fetchGlobal();
+      }
+      if (!feeConfig) {
+        feeConfig = await pumpOnlineSdk.fetchFeeConfig();
+      }
       const amount = getBuyTokenAmountFromSolAmount({
         global,
         feeConfig,
@@ -8211,14 +9131,16 @@ async function buildPumpSniperBuyInstructions(signer, mintAddress, lamports) {
       };
     } catch (error) {
       lastError = error;
-      await sleep(SNIPER_LAUNCH_FETCH_DELAY_MS);
+      if (attempt + 1 < maxAttempts) {
+        await sleep(retryDelayMs);
+      }
     }
   }
 
   throw lastError ?? new Error('Unable to build sniper buy instructions.');
 }
 
-async function executeSniperWizardBuy(order, mintAddress, grossLamports) {
+async function executeSniperWizardBuy(order, mintAddress, grossLamports, sharedLaunchState = null) {
   const timing = createTimingTracker();
   const signer = decodeOrderWallet(order.secretKeyB64 || order.walletSecretKeyB64);
   const expectedAddress = order.address || order.walletAddress;
@@ -8232,54 +9154,66 @@ async function executeSniperWizardBuy(order, mintAddress, grossLamports) {
     throw new Error('Sniper Wizard buy amount is too small after the handling fee.');
   }
 
-  const { instructions } = await buildPumpSniperBuyInstructions(signer, mintAddress, netLamports);
+  const { instructions } = await buildPumpSniperBuyInstructions(
+    signer,
+    mintAddress,
+    netLamports,
+    sharedLaunchState,
+  );
   timing.mark('buildMs');
 
   try {
-    const tipAccounts = await getJitoTipAccounts();
-    const tipInstruction = SystemProgram.transfer({
-      fromPubkey: signer.publicKey,
-      toPubkey: new PublicKey(chooseRandomTipAccount(tipAccounts)),
-      lamports: SNIPER_JITO_TIP_LAMPORTS,
-    });
+    const submitStartedAt = Date.now();
+    let finalInstructions = instructions;
+    try {
+      const tipAccounts = await getJitoTipAccounts();
+      const tipInstruction = SystemProgram.transfer({
+        fromPubkey: signer.publicKey,
+        toPubkey: new PublicKey(chooseRandomTipAccount(tipAccounts)),
+        lamports: SNIPER_JITO_TIP_LAMPORTS,
+      });
+      finalInstructions = [...instructions, tipInstruction];
+    } catch (tipError) {
+      console.warn(`[worker] Sniper Wizard tip-account fetch failed for ${signer.publicKey.toBase58()}:`, tipError?.message || tipError);
+    }
+
     const {
       transaction,
       blockhash,
       lastValidBlockHeight,
     } = await createVersionedTransactionWithMetadata(
       signer,
-      [...instructions, tipInstruction],
-      { commitment: 'processed' },
+      finalInstructions,
+      {
+        commitment: 'processed',
+        latestBlockhash: sharedLaunchState?.latestBlockhashMeta ?? null,
+      },
     );
-    const submitResult = await sendFastVersionedTransactionWithConfirmation(
+    const signature = await rebroadcastVersionedTransactionUntilSettled(
       transaction,
       {
         blockhash,
         lastValidBlockHeight,
-        preferSender: true,
-        preferBundleOnlyJito: true,
+        commitment: 'processed',
+        timeoutMs: 4_000,
+        rebroadcastIntervalMs: 175,
       },
     );
+    const submitMs = Date.now() - submitStartedAt;
     const buildMs = timing.elapsedMs;
-    let chargedHandlingFeeLamports = 0;
     if (handlingFeeLamports > 0) {
-      try {
-        await sendTradingHandlingFee(signer, handlingFeeLamports);
-        chargedHandlingFeeLamports = handlingFeeLamports;
-      } catch (feeError) {
-        console.warn(`[worker] Sniper Wizard handling fee transfer failed for ${signer.publicKey.toBase58()}:`, feeError?.message || feeError);
-      }
+      scheduleTradingHandlingFeeTransfer(signer, handlingFeeLamports, 'Sniper Wizard');
     }
     return {
-      signature: submitResult.signature,
-      route: submitResult.route,
+      signature,
+      route: 'rebroadcast_direct',
       grossLamports,
       netLamports,
-      handlingFeeLamports: chargedHandlingFeeLamports,
+      handlingFeeLamports,
       timingMs: timing.snapshot({
         buildMs,
-        submitMs: submitResult.submitMs || 0,
-        confirmMs: submitResult.confirmMs || 0,
+        submitMs,
+        confirmMs: 0,
       }),
     };
   } catch (error) {
@@ -8296,7 +9230,13 @@ async function executeSniperWizardBuy(order, mintAddress, grossLamports) {
   }
 }
 
-async function handleSniperWizardLaunch(userId, signature) {
+async function handleSniperWizardLaunch(
+  userId,
+  signature,
+  preferredConnection = null,
+  preResolvedMintAddress = null,
+  preResolvedLaunchState = null,
+) {
   const launchDetectedAt = Date.now();
   const store = await readStore();
   const user = store.users?.[userId];
@@ -8309,54 +9249,13 @@ async function handleSniperWizardLaunch(userId, signature) {
     return;
   }
 
-  const transaction = await fetchParsedTransactionWithRetry(signature);
-  const mintAddress = extractPumpLaunchMintAddress(transaction);
-  if (!mintAddress) {
-    return;
-  }
+  const mintAddress = preResolvedMintAddress || await fetchLaunchMintAddressWithRetry(signature, preferredConnection);
+  rememberKnownLaunchMint(signature, mintAddress);
+  let snapshot = buildStoredSniperWizardSnapshot(order);
+  const workingOrder = order;
+  let fundingPlan = buildSniperWizardFundingPlan(workingOrder, snapshot);
 
-  await updateSniperWizard(userId, (draft) => ({
-    ...draft,
-    status: 'launch_detected',
-    lastDetectedLaunchSignature: signature,
-    lastDetectedMintAddress: mintAddress,
-    lastError: null,
-    stats: {
-      ...normalizeSniperWizardStats(draft.stats),
-      launchCount: normalizeSniperWizardStats(draft.stats).launchCount + 1,
-      lastLaunchSignature: signature,
-      lastMintAddress: mintAddress,
-    },
-  }));
-
-  await appendUserActivityLog(userId, {
-    scope: `sniper_wizard:${order.id}`,
-    level: 'info',
-    message: `Sniper Wizard detected a fresh launch from the watched wallet: ${mintAddress}.`,
-  });
-
-  let snapshot = await refreshSniperWizardSnapshot(order);
-  let fundingPlan = buildSniperWizardFundingPlan(order, snapshot);
-  const routingState = await ensureSniperWizardFunding(userId, order, snapshot, fundingPlan);
-  const workingOrder = normalizeSniperWizardRecord(routingState.order || order);
-  if (!routingState.routed) {
-    snapshot = await refreshSniperWizardSnapshot(workingOrder);
-    await persistSniperWizardSnapshot(userId, snapshot, () => ({
-      status: 'routing',
-      lastError: null,
-    }));
-    await appendUserActivityLog(userId, {
-      scope: `sniper_wizard:${order.id}`,
-      level: 'warn',
-      message: 'Sniper Wizard saw a launch before stealth routing finished, so it is arming the sniper wallets now.',
-    });
-    return;
-  }
-
-  snapshot = await refreshSniperWizardSnapshot(workingOrder);
-  fundingPlan = buildSniperWizardFundingPlan(workingOrder, snapshot);
-
-  const workerAttempts = fundingPlan.workerPlans
+  let workerAttempts = fundingPlan.workerPlans
     .map((worker, index) => {
       const spendableLamports = getSniperSpendableLamports(worker.currentLamports || 0);
       const grossLamports = Math.floor((spendableLamports * workingOrder.snipePercent) / 100);
@@ -8369,6 +9268,39 @@ async function handleSniperWizardLaunch(userId, signature) {
     .filter((item) => item.worker?.address && item.worker?.secretKeyB64 && item.grossLamports > 0);
 
   if (workerAttempts.length === 0) {
+    snapshot = await refreshSniperWizardSnapshot(order);
+    fundingPlan = buildSniperWizardFundingPlan(workingOrder, snapshot);
+    workerAttempts = fundingPlan.workerPlans
+      .map((worker, index) => {
+        const spendableLamports = getSniperSpendableLamports(worker.currentLamports || 0);
+        const grossLamports = Math.floor((spendableLamports * workingOrder.snipePercent) / 100);
+        return {
+          index,
+          worker,
+          grossLamports,
+        };
+      })
+      .filter((item) => item.worker?.address && item.worker?.secretKeyB64 && item.grossLamports > 0);
+  }
+
+  if (workerAttempts.length === 0) {
+    const routingState = await ensureSniperWizardFunding(userId, order, snapshot, fundingPlan);
+    const reroutedOrder = normalizeSniperWizardRecord(routingState.order || order);
+    if (!routingState.routed) {
+      snapshot = await refreshSniperWizardSnapshot(reroutedOrder);
+      await persistSniperWizardSnapshot(userId, snapshot, () => ({
+        status: 'routing',
+        lastError: null,
+      }));
+      await appendUserActivityLog(userId, {
+        scope: `sniper_wizard:${order.id}`,
+        level: 'warn',
+        message: 'Sniper Wizard saw a launch before stealth routing finished, so it is arming the sniper wallets now.',
+      });
+      return;
+    }
+
+    snapshot = routingState.snapshot ?? await refreshSniperWizardSnapshot(reroutedOrder);
     await persistSniperWizardSnapshot(userId, snapshot, () => ({
       status: 'waiting_funds',
       lastError: 'The sniper wallets do not have enough SOL available after keeping gas in reserve.',
@@ -8381,35 +9313,89 @@ async function handleSniperWizardLaunch(userId, signature) {
     return;
   }
 
-  await updateSniperWizard(userId, (draft) => ({
-    ...draft,
-    status: 'sniping',
-    currentLamports: snapshot.currentLamports,
-    currentSol: formatSolAmountFromLamports(snapshot.currentLamports),
-    totalManagedLamports: snapshot.totalManagedLamports,
-    workerWallets: snapshot.workerWallets,
-    lastBalanceCheckAt: new Date().toISOString(),
-    lastError: null,
-    stats: {
-      ...normalizeSniperWizardStats(draft.stats),
-      snipeAttemptCount: normalizeSniperWizardStats(draft.stats).snipeAttemptCount + workerAttempts.length,
-      lastLaunchSignature: signature,
-      lastMintAddress: mintAddress,
-    },
-  }));
+  let sharedLaunchState = preResolvedLaunchState
+    ? {
+      tokenProgram: preResolvedLaunchState.tokenProgram ?? null,
+      global: preResolvedLaunchState.global ?? null,
+      feeConfig: preResolvedLaunchState.feeConfig ?? null,
+      bondingCurveAccountInfo: preResolvedLaunchState.bondingCurveAccountInfo ?? null,
+      bondingCurve: preResolvedLaunchState.bondingCurve ?? null,
+      associatedUserAccountInfoByOwner: preResolvedLaunchState.associatedUserAccountInfoByOwner ?? null,
+      latestBlockhashMeta: preResolvedLaunchState.latestBlockhashMeta ?? null,
+    }
+    : null;
+  try {
+    const primaryAttempt = workerAttempts[0] || null;
+    const primarySigner = primaryAttempt?.worker?.secretKeyB64
+      ? decodeOrderWallet(primaryAttempt.worker.secretKeyB64)
+      : null;
+    const [tokenProgram, global, feeConfig, latestBlockhashMeta] = await Promise.all([
+      sharedLaunchState?.tokenProgram
+        ? sharedLaunchState.tokenProgram
+        : getMintTokenProgram(mintAddress, 'processed'),
+      sharedLaunchState?.global
+        ? sharedLaunchState.global
+        : pumpOnlineSdk.fetchGlobal(),
+      sharedLaunchState?.feeConfig
+        ? sharedLaunchState.feeConfig
+        : pumpOnlineSdk.fetchFeeConfig(),
+      sharedLaunchState?.latestBlockhashMeta
+        ? sharedLaunchState.latestBlockhashMeta
+        : connection.getLatestBlockhash('processed'),
+    ]);
+    let prefetchedBuyState = null;
+    if (
+      primarySigner
+      && (!sharedLaunchState?.bondingCurveAccountInfo || !sharedLaunchState?.bondingCurve)
+    ) {
+      prefetchedBuyState = await pumpOnlineSdk.fetchBuyState(
+        new PublicKey(mintAddress),
+        primarySigner.publicKey,
+        tokenProgram,
+      );
+    }
+    let associatedUserAccountInfoByOwner = sharedLaunchState?.associatedUserAccountInfoByOwner ?? null;
+    if (!associatedUserAccountInfoByOwner && workerAttempts.length > 0) {
+      const associatedOwners = workerAttempts
+        .map((item) => item.worker?.secretKeyB64 ? decodeOrderWallet(item.worker.secretKeyB64).publicKey : null)
+        .filter(Boolean);
+      if (associatedOwners.length > 0) {
+        const associatedAccounts = associatedOwners.map((owner) => getAssociatedTokenAddressSync(
+          new PublicKey(mintAddress),
+          owner,
+          true,
+          tokenProgram,
+        ));
+        const accountInfos = await connection.getMultipleAccountsInfo(associatedAccounts, 'processed');
+        associatedUserAccountInfoByOwner = {};
+        associatedOwners.forEach((owner, index) => {
+          associatedUserAccountInfoByOwner[owner.toBase58()] = accountInfos[index] ?? null;
+        });
+      }
+    }
+    sharedLaunchState = {
+      tokenProgram,
+      global,
+      feeConfig,
+      bondingCurveAccountInfo: prefetchedBuyState?.bondingCurveAccountInfo ?? null,
+      bondingCurve: prefetchedBuyState?.bondingCurve ?? null,
+      associatedUserAccountInfoByOwner,
+      latestBlockhashMeta,
+    };
+  } catch (error) {
+    console.warn(`[worker] Sniper Wizard shared launch state prefetch failed for ${mintAddress}:`, error?.message || error);
+  }
 
   const attemptResults = await Promise.allSettled(workerAttempts.map((item) => executeSniperWizardBuy({
     address: item.worker.address,
     secretKeyB64: item.worker.secretKeyB64,
-  }, mintAddress, item.grossLamports)));
+  }, mintAddress, item.grossLamports, sharedLaunchState)));
   const successes = attemptResults
     .map((result, index) => ({ result, worker: workerAttempts[index] }))
     .filter((item) => item.result.status === 'fulfilled');
   const failures = attemptResults
     .map((result, index) => ({ result, worker: workerAttempts[index] }))
     .filter((item) => item.result.status === 'rejected');
-
-  snapshot = await refreshSniperWizardSnapshot(workingOrder);
 
   await persistSniperWizardSnapshot(userId, snapshot, (draft) => {
     const stats = normalizeSniperWizardStats(draft.stats);
@@ -8428,16 +9414,21 @@ async function handleSniperWizardLaunch(userId, signature) {
     const failureMessage = failures[0]?.result.status === 'rejected'
       ? String(failures[0].result.reason?.message || failures[0].result.reason || 'Unknown sniper failure.')
       : null;
+    const alreadyTracked = draft.lastDetectedLaunchSignature === signature;
     return {
       ...draft,
       status: successes.length > 0
         ? (draft.automationEnabled ? 'watching' : 'stopped')
         : 'failed',
+      lastDetectedLaunchSignature: signature,
+      lastDetectedMintAddress: mintAddress,
       lastSnipeSignature: firstSignature,
       lastBalanceCheckAt: new Date().toISOString(),
       lastError: failureMessage,
       stats: {
         ...stats,
+        launchCount: alreadyTracked ? stats.launchCount : (stats.launchCount + 1),
+        snipeAttemptCount: stats.snipeAttemptCount + workerAttempts.length,
         snipeSuccessCount: successCount,
         totalSpentLamports: stats.totalSpentLamports + totalNetLamports,
         totalFeeLamports: stats.totalFeeLamports + totalFeeLamports,
@@ -8482,6 +9473,10 @@ async function handleSniperWizardLaunch(userId, signature) {
       message: `Sniper Wizard had ${failures.length} wallet(s) fail during the snipe. The first error was: ${String(failures[0].result.reason?.message || failures[0].result.reason || 'Unknown error')}`,
     });
   }
+
+  void refreshSniperWizardSnapshot(workingOrder)
+    .then((freshSnapshot) => persistSniperWizardSnapshot(userId, freshSnapshot))
+    .catch(() => null);
 }
 
 async function stopSniperWizardSubscription(userId) {
@@ -8525,6 +9520,26 @@ function createSniperWatcherConnection(endpoint) {
     commitment: 'processed',
     wsEndpoint: endpoint.wsUrl,
   });
+}
+
+async function doesLaunchMintExist(mintAddress) {
+  try {
+    const info = await connection.getAccountInfo(mintAddress, 'confirmed');
+    return Boolean(info);
+  } catch {
+    return false;
+  }
+}
+
+async function waitForLaunchMintExist(mintAddress, timeoutMs = 4_000, pollMs = 250) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await doesLaunchMintExist(mintAddress)) {
+      return true;
+    }
+    await sleep(pollMs);
+  }
+  return false;
 }
 
 function getNextSniperWatcherEndpointIndex(currentIndex = -1) {
@@ -8612,6 +9627,7 @@ async function startSniperWizardSubscription(userId, order, seed = {}) {
     endpointIndex,
     endpoint,
     connection: watcherConnection,
+    startedAt: Date.now(),
     lastSlotAt: Date.now(),
     rotationCount: Number.isInteger(seed?.rotationCount) ? seed.rotationCount : 0,
   };
@@ -8638,7 +9654,7 @@ async function startSniperWizardSubscription(userId, order, seed = {}) {
     activeWatcher.processingSignatures.add(signature);
     rememberSniperSignature(activeWatcher, signature);
 
-    void handleSniperWizardLaunch(userId, signature)
+    void handleSniperWizardLaunch(userId, signature, watcherConnection)
       .catch(async (error) => {
         await updateSniperWizard(userId, (draft) => ({
           ...draft,
@@ -8661,6 +9677,33 @@ async function startSniperWizardSubscription(userId, order, seed = {}) {
   watcher.subscriptionId = subscriptionId;
   sniperWizardSubscriptions.set(userId, watcher);
   ensureSniperWatcherHeartbeatLoop();
+}
+
+async function waitForSniperWatchersReady(targetWalletAddress, timeoutMs = 4_000, minWarmMs = 750) {
+  if (!targetWalletAddress) {
+    return;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const matchingWatchers = [...sniperWizardSubscriptions.values()].filter(
+      (watcher) => watcher?.targetWalletAddress === targetWalletAddress,
+    );
+    if (matchingWatchers.length === 0) {
+      return;
+    }
+
+    const watchersReady = matchingWatchers.every((watcher) => (
+      watcher.subscriptionId
+      && (Date.now() - (watcher.startedAt || 0)) >= minWarmMs
+      && (Date.now() - (watcher.lastSlotAt || 0)) <= SNIPER_WATCHER_STALE_MS
+    ));
+    if (watchersReady) {
+      return;
+    }
+
+    await sleep(100);
+  }
 }
 
 async function syncSniperWizardSubscriptions(store) {
@@ -8708,14 +9751,28 @@ async function scanSniperWizards() {
     }
 
     try {
-      let snapshot = await refreshSniperWizardSnapshot(order);
+      const lastBalanceCheckAtMs = order.lastBalanceCheckAt ? Date.parse(order.lastBalanceCheckAt) : 0;
+      const canUseStoredSnapshot = Boolean(
+        lastBalanceCheckAtMs
+        && Number.isFinite(lastBalanceCheckAtMs)
+        && (Date.now() - lastBalanceCheckAtMs) <= SNIPER_BALANCE_REFRESH_MS,
+      );
+      let snapshot = canUseStoredSnapshot
+        ? buildStoredSniperWizardSnapshot(order)
+        : await refreshSniperWizardSnapshot(order);
       let workingOrder = order;
 
       if (workingOrder.automationEnabled && sniperWizardCanRun(workingOrder)) {
         const fundingPlan = buildSniperWizardFundingPlan(workingOrder, snapshot);
-        const fundingState = await ensureSniperWizardFunding(userId, workingOrder, snapshot, fundingPlan);
-        workingOrder = normalizeSniperWizardRecord(fundingState.order || workingOrder);
-        snapshot = await refreshSniperWizardSnapshot(workingOrder);
+        const walletsReady = fundingPlan.workerPlans.every((worker) => (
+          !worker.address
+          || worker.currentLamports + SNIPER_FUNDING_TOLERANCE_LAMPORTS >= worker.targetLamports
+        ));
+        if (!canUseStoredSnapshot || !walletsReady) {
+          const fundingState = await ensureSniperWizardFunding(userId, workingOrder, snapshot, fundingPlan);
+          workingOrder = normalizeSniperWizardRecord(fundingState.order || workingOrder);
+          snapshot = await refreshSniperWizardSnapshot(workingOrder);
+        }
       }
 
       await persistSniperWizardSnapshot(userId, snapshot, (draft) => {
@@ -8736,7 +9793,9 @@ async function scanSniperWizards() {
 
         return {
           status: nextStatus,
-          lastError: draft.automationEnabled ? draft.lastError : null,
+          lastError: (draft.automationEnabled && ['routing', 'launch_detected', 'sniping', 'failed'].includes(nextStatus))
+            ? draft.lastError
+            : null,
         };
       });
     } catch (error) {
@@ -8773,7 +9832,7 @@ async function fetchCommunityVisionCommunities(handle) {
         ? { Authorization: `Bearer ${cfg.communityVision.bearerToken}` }
         : {}),
     },
-  });
+  }, 'confirmed');
 
   if (!response.ok) {
     throw new Error(`Community Vision lookup failed with status ${response.status}.`);
@@ -8932,6 +9991,83 @@ function splitLamportsEvenly(totalLamports, parts) {
     }
     return value;
   });
+}
+
+function shuffleArray(values = []) {
+  const copy = Array.isArray(values) ? [...values] : [];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+}
+
+function hashStringToUint32(value) {
+  const input = String(value || '');
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createSeededRandom(seedValue) {
+  let state = hashStringToUint32(seedValue) || 1;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
+function splitLamportsRandomized(totalLamports, parts, { varianceBps = 2_500, seed = 'default' } = {}) {
+  if (!Number.isInteger(totalLamports) || totalLamports <= 0 || !Number.isInteger(parts) || parts <= 0) {
+    return [];
+  }
+
+  if (parts === 1) {
+    return [totalLamports];
+  }
+
+  const safeVarianceBps = Math.max(0, Math.min(4_500, varianceBps));
+  const baseWeight = 10_000;
+  const random = createSeededRandom(seed);
+  const weights = Array.from({ length: parts }, () => (
+    baseWeight + Math.floor((random() * ((safeVarianceBps * 2) + 1)) - safeVarianceBps)
+  ));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const randomized = weights.map((weight) => Math.max(1, Math.floor((totalLamports * weight) / totalWeight)));
+
+  let remainder = totalLamports - randomized.reduce((sum, value) => sum + value, 0);
+  const randomIndexes = shuffleArray(
+    Array.from({ length: parts }, (_, index) => ({ index, sortKey: random() })),
+  ).sort((left, right) => left.sortKey - right.sortKey)
+    .map((item) => item.index);
+
+  while (remainder > 0) {
+    for (const index of randomIndexes) {
+      randomized[index] += 1;
+      remainder -= 1;
+      if (remainder <= 0) {
+        break;
+      }
+    }
+  }
+
+  while (remainder < 0) {
+    for (const index of randomIndexes) {
+      if (randomized[index] <= 1) {
+        continue;
+      }
+      randomized[index] -= 1;
+      remainder += 1;
+      if (remainder >= 0) {
+        break;
+      }
+    }
+  }
+
+  return randomized;
 }
 
 function getWalletTokenBalanceChangeDetails(transaction, walletAddress, mint) {
@@ -9511,8 +10647,8 @@ async function ensureLaunchBuyMetadata(order) {
   await fs.mkdir(LAUNCH_BUY_ASSETS_DIR, { recursive: true });
   const logoFileName = path.basename(order.logoPath);
   const metadataFileName = `${order.id}.json`;
-  const imageUrl = buildLaunchBuyPublicUrl(`launch-assets/${logoFileName}`);
-  const metadataUrl = buildLaunchBuyPublicUrl(`launch-assets/${metadataFileName}`);
+  const imageUrl = buildLaunchBuyPublicUrl(`a/${logoFileName}`);
+  const metadataUrl = buildLaunchBuyPublicUrl(`a/${metadataFileName}`);
   const metadata = {
     name: order.tokenName,
     symbol: order.symbol,
@@ -9581,12 +10717,21 @@ async function persistLaunchBuySnapshot(userId, orderId, snapshot, patchOrder = 
 function buildLaunchBuyParticipantPlan(order, snapshot) {
   const totalBuyLamports = order.totalBuyLamports || 0;
   const participantCount = 1 + (order.buyerWallets?.length || 0);
-  const splitPlan = splitLamportsEvenly(totalBuyLamports, participantCount);
+  const splitSeed = [
+    order.id,
+    order.walletAddress || 'launch',
+    ...snapshot.buyerWallets.map((wallet, index) => wallet.address || wallet.label || String(index)),
+  ].join(':');
+  const splitPlan = splitLamportsRandomized(totalBuyLamports, participantCount, {
+    varianceBps: 2_800,
+    seed: splitSeed,
+  });
   const launcherBudgetLamports = splitPlan[0] || 0;
 
   const buyerPlans = (snapshot.buyerWallets || []).map((wallet, index) => ({
     ...wallet,
     plannedLamports: splitPlan[index + 1] || 0,
+    fundingLamports: (splitPlan[index + 1] || 0) + LAUNCH_BUY_BUYER_RESERVE_LAMPORTS,
     fundedLamports: wallet.currentLamports || 0,
   }));
 
@@ -9615,11 +10760,12 @@ function chunkLaunchBuyPlansBySize(plans, maxChunkSize = LAUNCH_BUY_MAX_ATOMIC_B
 
 function splitLaunchBuyBuyerWaves(plans) {
   const maxAtomicBuyerTxCount = Math.max(1, JITO_MAX_BUNDLE_TRANSACTIONS - 1);
-  const atomicBuyerCapacity = maxAtomicBuyerTxCount * Math.max(1, LAUNCH_BUY_MAX_ATOMIC_BUYERS_PER_TX);
+  const maxBuyersPerAtomicTx = 1;
+  const atomicBuyerCapacity = maxAtomicBuyerTxCount * maxBuyersPerAtomicTx;
   const atomicBuyers = plans.slice(0, atomicBuyerCapacity);
   const overflowBuyers = plans.slice(atomicBuyerCapacity);
   return {
-    atomicGroups: chunkLaunchBuyPlansBySize(atomicBuyers, LAUNCH_BUY_MAX_ATOMIC_BUYERS_PER_TX)
+    atomicGroups: chunkLaunchBuyPlansBySize(atomicBuyers, maxBuyersPerAtomicTx)
       .slice(0, maxAtomicBuyerTxCount),
     overflowBuyers,
   };
@@ -9627,21 +10773,37 @@ function splitLaunchBuyBuyerWaves(plans) {
 
 async function ensureLaunchBuyBuyerFunding(userId, order, snapshot, participantPlan) {
   if (order.launchMode !== 'magic') {
-    for (const buyer of participantPlan.buyerPlans) {
-      if (!buyer.address || buyer.currentLamports >= buyer.plannedLamports || buyer.plannedLamports <= 0) {
+    for (const buyer of shuffleArray(participantPlan.buyerPlans)) {
+      if (!buyer.address || buyer.currentLamports >= buyer.fundingLamports || buyer.plannedLamports <= 0) {
         continue;
       }
-      const topUpLamports = buyer.plannedLamports - buyer.currentLamports;
+      const topUpLamports = buyer.fundingLamports - buyer.currentLamports;
       await transferLamportsBetweenWallets(snapshot.signer, buyer.address, topUpLamports);
+    }
+    const verifiedSnapshot = await refreshLaunchBuySnapshot(order);
+    await persistLaunchBuySnapshot(userId, order.id, verifiedSnapshot);
+    const verifiedPlan = buildLaunchBuyParticipantPlan(order, verifiedSnapshot);
+    const underfundedBuyer = verifiedPlan.buyerPlans.find((buyer) => (
+      buyer.address
+      && buyer.plannedLamports > 0
+      && buyer.currentLamports + LAUNCH_BUY_FUNDING_TOLERANCE_LAMPORTS < buyer.fundingLamports
+    ));
+    if (underfundedBuyer) {
+      throw new Error(
+        `Buyer wallet ${underfundedBuyer.label || underfundedBuyer.address} is underfunded `
+        + `(${formatSolAmountFromLamports(underfundedBuyer.currentLamports)} SOL / `
+        + `${formatSolAmountFromLamports(underfundedBuyer.fundingLamports)} SOL target).`,
+      );
     }
     return {
       order,
       routed: true,
+      snapshot: verifiedSnapshot,
     };
   }
 
   if (!order.routingOrderId) {
-    const amountLamports = participantPlan.buyerPlans.reduce((sum, wallet) => sum + (wallet.plannedLamports || 0), 0);
+    const amountLamports = participantPlan.buyerPlans.reduce((sum, wallet) => sum + (wallet.fundingLamports || 0), 0);
     const routingOrder = await createLaunchBuyRoutingOrderData(order, amountLamports);
     await updateLaunchBuy(userId, order.id, (draft) => ({
       ...draft,
@@ -9693,6 +10855,7 @@ async function ensureLaunchBuyBuyerFunding(userId, order, snapshot, participantP
       status: isComplete ? 'queued' : 'routing',
     }),
     routed: isComplete,
+    snapshot: isComplete ? await refreshLaunchBuySnapshot(order) : null,
   };
 }
 
@@ -9704,6 +10867,7 @@ async function createLaunchBuyBuyerVersionedTransaction({
   feeConfig,
   syntheticCurve,
   budgetLamports,
+  latestBlockhash = null,
 }) {
   const associatedUser = getAssociatedTokenAddressSync(
     mintAddress,
@@ -9722,7 +10886,7 @@ async function createLaunchBuyBuyerVersionedTransaction({
   const instructions = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: SNIPER_COMPUTE_UNIT_LIMIT }),
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: SNIPER_PRIORITY_FEE_MICROLAMPORTS }),
-    createAssociatedTokenAccountInstruction(
+    createAssociatedTokenAccountIdempotentInstruction(
       payerSigner.publicKey,
       associatedUser,
       payerSigner.publicKey,
@@ -9747,17 +10911,30 @@ async function createLaunchBuyBuyerVersionedTransaction({
   const transactionMeta = await createVersionedTransactionWithMetadata(
     payerSigner,
     instructions,
-    { commitment: 'processed' },
+    {
+      commitment: 'processed',
+      latestBlockhash,
+    },
   );
   advanceSyntheticBondingCurve(syntheticCurve, budgetLamports, amount);
   return transactionMeta;
 }
 
 async function executeLaunchBuyBundle(userId, order, snapshot) {
+  order = await getLatestLaunchBuyOrder(userId, order.id) ?? normalizeLaunchBuyRecord(order);
+  if (!Array.isArray(order.buyerWallets) || order.buyerWallets.length < order.buyerWalletCount) {
+    throw new Error(
+      `Launch + Buy requires ${order.buyerWalletCount} buyer wallets, but only `
+      + `${Array.isArray(order.buyerWallets) ? order.buyerWallets.length : 0} are configured.`,
+    );
+  }
   const timing = createTimingTracker();
-  const { metadataUrl } = await ensureLaunchBuyMetadata(order);
-  const feeConfig = await pumpOnlineSdk.fetchFeeConfig();
-  const global = await pumpOnlineSdk.fetchGlobal();
+  const [metadataState, feeConfig, global] = await Promise.all([
+    ensureLaunchBuyMetadata(order),
+    pumpOnlineSdk.fetchFeeConfig(),
+    pumpOnlineSdk.fetchGlobal(),
+  ]);
+  const { metadataUrl } = metadataState;
   const mintKeypair = Keypair.generate();
   const creator = snapshot.signer.publicKey;
 
@@ -9777,14 +10954,20 @@ async function executeLaunchBuyBundle(userId, order, snapshot) {
   }
 
   const participantPlan = buildLaunchBuyParticipantPlan(order, snapshot);
+  if (participantPlan.buyerPlans.length !== order.buyerWalletCount) {
+    throw new Error(
+      `Launch + Buy expected ${order.buyerWalletCount} buyer plans, but built ${participantPlan.buyerPlans.length}.`,
+    );
+  }
   const routingState = await ensureLaunchBuyBuyerFunding(userId, order, snapshot, participantPlan);
   if (!routingState.routed) {
     return false;
   }
 
-  const refreshedSnapshot = await refreshLaunchBuySnapshot(order);
+  const refreshedSnapshot = routingState.snapshot ?? await refreshLaunchBuySnapshot(order);
   const refreshedPlan = buildLaunchBuyParticipantPlan(order, refreshedSnapshot);
   const syntheticCurve = newBondingCurve(global);
+  const sharedLaunchBlockhash = await connection.getLatestBlockhash('processed');
 
   const launcherAmount = getBuyTokenAmountFromSolAmount({
     global,
@@ -9806,102 +10989,170 @@ async function executeLaunchBuyBundle(userId, order, snapshot) {
     solAmount: new BN(refreshedPlan.launcherBudgetLamports),
     mayhemMode: false,
   });
-  const tipAccounts = await getJitoTipAccounts();
-  const launchInstructionsWithTip = [
+  const launchInstructionsWithPriority = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: SNIPER_COMPUTE_UNIT_LIMIT }),
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: SNIPER_PRIORITY_FEE_MICROLAMPORTS }),
     ...launchInstructions,
-    SystemProgram.transfer({
-      fromPubkey: refreshedSnapshot.signer.publicKey,
-      toPubkey: new PublicKey(chooseRandomTipAccount(tipAccounts)),
-      lamports: order.jitoTipLamports || LAUNCH_BUY_DEFAULT_JITO_TIP_LAMPORTS,
-    }),
   ];
   advanceSyntheticBondingCurve(syntheticCurve, refreshedPlan.launcherBudgetLamports, launcherAmount);
 
   const buyerPlans = refreshedSnapshot.buyerWallets
     .map((wallet, index) => ({
       wallet,
-      budgetLamports: wallet.currentLamports || refreshedPlan.buyerPlans[index]?.plannedLamports || 0,
+      budgetLamports: refreshedPlan.buyerPlans[index]?.plannedLamports || 0,
     }))
     .filter((item) => item.wallet?.address && item.wallet?.secretKeyB64 && item.budgetLamports > 0);
 
   const { atomicGroups, overflowBuyers } = splitLaunchBuyBuyerWaves(buyerPlans);
-  const buyerTransactions = [];
+  const buyerTransactionPlans = [];
 
   for (const group of atomicGroups) {
-    const instructions = [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: SNIPER_COMPUTE_UNIT_LIMIT }),
-      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: SNIPER_PRIORITY_FEE_MICROLAMPORTS }),
-    ];
-    const signers = [];
-
     for (const item of group) {
       const buyerSigner = decodeOrderWallet(item.wallet.secretKeyB64);
-      const associatedUser = getAssociatedTokenAddressSync(
-        mintKeypair.publicKey,
-        buyerSigner.publicKey,
-        true,
-        TOKEN_2022_PROGRAM_ID,
-      );
-      const amount = getBuyTokenAmountFromSolAmount({
+      const meta = await createLaunchBuyBuyerVersionedTransaction({
+        payerSigner: buyerSigner,
+        mintAddress: mintKeypair.publicKey,
+        creator,
         global,
         feeConfig,
-        mintSupply: syntheticCurve.tokenTotalSupply,
-        bondingCurve: syntheticCurve,
-        amount: new BN(item.budgetLamports),
+        syntheticCurve,
+        budgetLamports: item.budgetLamports,
+        latestBlockhash: sharedLaunchBlockhash,
       });
-      instructions.push(
-        createAssociatedTokenAccountInstruction(
-          buyerSigner.publicKey,
-          associatedUser,
-          buyerSigner.publicKey,
-          mintKeypair.publicKey,
-          TOKEN_2022_PROGRAM_ID,
-          ASSOCIATED_TOKEN_PROGRAM_ID,
-        ),
-      );
-      instructions.push(await PUMP_SDK.buyInstruction({
-        global,
-        mint: mintKeypair.publicKey,
-        creator,
-        user: buyerSigner.publicKey,
-        associatedUser,
-        amount,
-        solAmount: new BN(item.budgetLamports),
-        slippage: 35,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
-        mayhemMode: false,
-      }));
-      signers.push(buyerSigner);
-      advanceSyntheticBondingCurve(syntheticCurve, item.budgetLamports, amount);
+      buyerTransactionPlans.push({
+        walletAddress: item.wallet.address,
+        budgetLamports: item.budgetLamports,
+        signers: [buyerSigner],
+        meta,
+      });
     }
-
-    const { transaction } = await createVersionedTransactionForSigners(
-      refreshedSnapshot.signer,
-      instructions,
-      signers,
-      { commitment: 'processed' },
-    );
-    buyerTransactions.push(transaction);
   }
   timing.mark('buildMs');
 
-  const { transaction: launchTransaction } = await createVersionedTransactionForSigners(
+  const launchTransactionMeta = await createVersionedTransactionForSigners(
     refreshedSnapshot.signer,
-    launchInstructionsWithTip,
+    launchInstructionsWithPriority,
     [mintKeypair],
-    { commitment: 'processed' },
+    {
+      commitment: 'processed',
+      latestBlockhash: sharedLaunchBlockhash,
+    },
   );
-  const bundleTransactions = [launchTransaction, ...buyerTransactions].slice(0, JITO_MAX_BUNDLE_TRANSACTIONS);
-  if (bundleTransactions.length > JITO_MAX_BUNDLE_TRANSACTIONS) {
-    throw new Error(`Launch + Buy atomic bundle exceeded Jito's ${JITO_MAX_BUNDLE_TRANSACTIONS}-transaction limit.`);
-  }
+  const launchTransactionPlan = {
+    instructions: launchInstructionsWithPriority,
+    signers: [mintKeypair],
+    meta: launchTransactionMeta,
+  };
   const bundleSubmitStartedAt = Date.now();
-  const bundleId = await sendJitoBundle(bundleTransactions);
-  const bundleSentAt = Date.now();
-  await waitForJitoBundleLanded(bundleId);
-  const bundleWaitMs = Date.now() - bundleSentAt;
+  let bundleId = null;
+  let bundleSentAt = bundleSubmitStartedAt;
+  let bundleWaitMs = 0;
+  let primarySignatures = [];
+  const launchSignature = await rebroadcastVersionedTransactionUntilSettled(
+    launchTransactionPlan.meta.transaction,
+    {
+      blockhash: launchTransactionPlan.meta.blockhash,
+      lastValidBlockHeight: launchTransactionPlan.meta.lastValidBlockHeight,
+      commitment: 'processed',
+      timeoutMs: 9_000,
+      rebroadcastIntervalMs: 350,
+      successCheck: () => doesLaunchMintExist(mintKeypair.publicKey),
+    },
+  );
+  bundleSentAt = Date.now();
+  primarySignatures.push(launchSignature);
+  const launchConfirmed = await doesLaunchMintExist(mintKeypair.publicKey);
+  if (!launchConfirmed) {
+    throw new Error(`Launch + Buy launch transaction did not land for mint ${mintKeypair.publicKey.toBase58()}.`);
+  }
+  bundleWaitMs = Date.now() - bundleSentAt;
+
+  const latestStore = await readStore();
+  const latestUser = latestStore.users?.[userId] ?? {};
+  const sniperCandidates = collectRunnableSniperWizards(latestUser)
+    .filter((candidate) => candidate.targetWalletAddress === order.walletAddress);
+  const primaryLaunchSignature = primarySignatures.find(Boolean) || null;
+  const sniperOrder = sniperCandidates[0] ?? null;
+  if (primaryLaunchSignature && sniperOrder) {
+    const watcher = sniperWizardSubscriptions.get(userId);
+    watcher?.processingSignatures.add(primaryLaunchSignature);
+    if (watcher) {
+      rememberSniperSignature(watcher, primaryLaunchSignature);
+    }
+    rememberKnownLaunchMint(primaryLaunchSignature, mintKeypair.publicKey.toBase58());
+    void updateSniperWizard(userId, (draft) => ({
+      ...draft,
+      status: 'launch_detected',
+      lastDetectedLaunchSignature: primaryLaunchSignature,
+      lastDetectedMintAddress: mintKeypair.publicKey.toBase58(),
+      lastError: null,
+      stats: {
+        ...normalizeSniperWizardStats(draft.stats),
+        launchCount: normalizeSniperWizardStats(draft.stats).launchCount + 1,
+        lastLaunchSignature: primaryLaunchSignature,
+        lastMintAddress: mintKeypair.publicKey.toBase58(),
+      },
+    })).catch(() => null);
+    console.info(
+      `[worker] Launch + Buy handoff armed Sniper Wizard ${sniperOrder.id} for mint `
+      + `${mintKeypair.publicKey.toBase58()} (${primaryLaunchSignature}).`,
+    );
+
+    const sniperSharedLaunchState = {
+      tokenProgram: TOKEN_2022_PROGRAM_ID,
+      global,
+      feeConfig,
+    };
+
+    void handleSniperWizardLaunch(
+      userId,
+      primaryLaunchSignature,
+      connection,
+      mintKeypair.publicKey.toBase58(),
+      sniperSharedLaunchState,
+    )
+      .catch(async (error) => {
+        await updateSniperWizard(userId, (draft) => ({
+          ...draft,
+          status: draft.automationEnabled ? 'watching' : 'stopped',
+          lastError: String(error.message || error),
+        })).catch(() => null);
+        await appendUserActivityLog(userId, {
+          scope: `sniper_wizard:${sniperOrder.id}`,
+          level: 'error',
+          message: `Sniper Wizard error: ${String(error.message || error)}`,
+        }).catch(() => null);
+      })
+      .finally(() => {
+        const latestWatcher = sniperWizardSubscriptions.get(userId);
+        latestWatcher?.processingSignatures.delete(primaryLaunchSignature);
+      });
+  } else {
+    console.info(
+      `[worker] Launch + Buy skipped sniper handoff for ${order.id}: `
+      + `${primaryLaunchSignature ? 'no matching runnable sniper order' : 'missing launch signature'}.`,
+    );
+  }
+
+  const atomicStartedAt = Date.now();
+  const atomicResults = await Promise.allSettled(
+    buyerTransactionPlans.map((item) => rebroadcastVersionedTransactionUntilSettled(
+      item.meta.transaction,
+      {
+        blockhash: item.meta.blockhash,
+        lastValidBlockHeight: item.meta.lastValidBlockHeight,
+        commitment: 'processed',
+        timeoutMs: 7_000,
+        rebroadcastIntervalMs: 300,
+      },
+    )),
+  );
+  for (const result of atomicResults) {
+    if (result.status === 'fulfilled' && result.value) {
+      primarySignatures.push(result.value);
+    }
+  }
+  console.info(`[worker] Launch + Buy direct atomic wave for ${order.id} sent ${buyerTransactionPlans.length} buyer tx(s) in ${Date.now() - atomicStartedAt}ms.`);
 
   let overflowResults = [];
   if (overflowBuyers.length > 0) {
@@ -9918,19 +11169,21 @@ async function executeLaunchBuyBundle(userId, order, snapshot) {
           feeConfig,
           syntheticCurve,
           budgetLamports: item.budgetLamports,
+          latestBlockhash: sharedLaunchBlockhash,
         }),
       });
     }
 
     const overflowStartedAt = Date.now();
     overflowResults = await Promise.allSettled(
-      overflowTransactions.map((item) => sendFastVersionedTransactionWithConfirmation(
+      overflowTransactions.map((item) => rebroadcastVersionedTransactionUntilSettled(
         item.meta.transaction,
         {
           blockhash: item.meta.blockhash,
           lastValidBlockHeight: item.meta.lastValidBlockHeight,
-          preferSender: true,
-          preferBundleOnlyJito: true,
+          commitment: 'processed',
+          timeoutMs: 7_000,
+          rebroadcastIntervalMs: 300,
         },
       )),
     );
@@ -9962,7 +11215,7 @@ async function executeLaunchBuyBundle(userId, order, snapshot) {
         avgTotalLatencyMs: launchCount > 0
           ? Math.round((((existing.avgTotalLatencyMs || 0) * existing.launchCount) + totalMs) / launchCount)
           : totalMs,
-        lastBundleTransactionCount: bundleTransactions.length,
+        lastBundleTransactionCount: 1 + buyerTransactionPlans.length,
         lastMintAddress: mintKeypair.publicKey.toBase58(),
         lastBundleId: bundleId,
       };
@@ -9971,10 +11224,10 @@ async function executeLaunchBuyBundle(userId, order, snapshot) {
     launchedMintAddress: mintKeypair.publicKey.toBase58(),
     launchBundleId: bundleId,
     launchSignatures: [
-      bundleId,
+      ...primarySignatures,
       ...overflowResults
         .filter((item) => item.status === 'fulfilled')
-        .map((item) => item.value.signature)
+        .map((item) => item.value)
         .filter(Boolean),
     ],
     launchedAt: new Date().toISOString(),
@@ -9984,8 +11237,9 @@ async function executeLaunchBuyBundle(userId, order, snapshot) {
   await appendUserActivityLog(userId, {
     scope: `launch_buy:${order.id}`,
     level: 'info',
-    message: `Launch + Buy completed for ${order.tokenName} (${mintKeypair.publicKey.toBase58()}) with bundle ${bundleId}. Atomic wave used ${bundleTransactions.length} transaction(s) for ${atomicGroups.flat().length} buyer wallet(s) in about ${timing.elapsedMs}ms${overflowBuyers.length > 0 ? `, then pushed ${overflowBuyers.length} overflow buyer wallet(s) immediately after landing.` : '.'}`,
+    message: `Launch + Buy completed for ${order.tokenName} (${mintKeypair.publicKey.toBase58()}) through direct launch + warmed buyer execution. Atomic wave used ${1 + buyerTransactionPlans.length} transaction(s) for ${atomicGroups.flat().length} buyer wallet(s) in about ${timing.elapsedMs}ms${overflowBuyers.length > 0 ? `, then pushed ${overflowBuyers.length} overflow buyer wallet(s) immediately after landing.` : '.'}`,
   });
+
   return true;
 }
 
@@ -10000,7 +11254,16 @@ async function scanLaunchBuys() {
 
       try {
         const snapshot = await refreshLaunchBuySnapshot(order);
-        const fundedReady = snapshot.currentLamports >= (order.estimatedTotalNeededLamports || 0);
+        const buyerReserveLamports = estimateLaunchBuyBuyerReserveLamports(order.buyerWalletCount);
+        const requiredLamports = order.setupFeePaidAt
+          ? (
+            (order.totalBuyLamports || 0)
+            + (order.jitoTipLamports || 0)
+            + (order.estimatedRoutingFeeLamports || 0)
+            + buyerReserveLamports
+          )
+          : (order.estimatedTotalNeededLamports || 0);
+        const fundedReady = snapshot.currentLamports >= requiredLamports;
         await persistLaunchBuySnapshot(userId, order.id, snapshot, () => ({
           status: order.status === 'completed'
             ? 'completed'
@@ -10008,7 +11271,18 @@ async function scanLaunchBuys() {
           lastError: null,
         }));
 
+        if (
+          fundedReady
+          && order.launchMode !== 'magic'
+          && ['ready', 'setup', 'awaiting_funds'].includes(order.status)
+        ) {
+          const participantPlan = buildLaunchBuyParticipantPlan(order, snapshot);
+          const warmState = await ensureLaunchBuyBuyerFunding(userId, order, snapshot, participantPlan);
+          snapshot = warmState.snapshot ?? await refreshLaunchBuySnapshot(order);
+        }
+
         if (order.status === 'queued' || order.status === 'routing') {
+          await waitForSniperWatchersReady(order.walletAddress);
           await updateLaunchBuy(userId, order.id, (draft) => ({
             ...draft,
             status: draft.status === 'routing' ? 'routing' : 'launching',
@@ -10397,6 +11671,232 @@ async function scanDevWalletSwap() {
   }
 }
 
+async function scanStakingRewards() {
+  const store = await readStore();
+  const currentState = store.worker?.stakingRewards ?? createDefaultWorkerState().stakingRewards;
+  const nowIso = new Date().toISOString();
+
+  if (!cfg.platformRevenue.enabled) {
+    if (currentState.status !== 'disabled') {
+      store.worker = {
+        ...store.worker,
+        stakingRewards: {
+          ...currentState,
+          enabled: false,
+          status: 'disabled',
+          lastCheckedAt: nowIso,
+          lastError: cfg.platformRevenue.reason,
+        },
+      };
+      await writeStore(store);
+    }
+    return;
+  }
+
+  let rewardsVaultBalanceLamports = 0;
+  try {
+    rewardsVaultBalanceLamports = await connection.getBalance(
+      new PublicKey(cfg.platformRevenue.rewardsVaultAddress),
+      'confirmed',
+    );
+  } catch (error) {
+    store.worker = {
+      ...store.worker,
+      stakingRewards: {
+        ...currentState,
+        enabled: true,
+        status: 'error',
+        lastCheckedAt: nowIso,
+        lastError: String(error.message || error),
+      },
+    };
+    await writeStore(store);
+    console.error('[worker] Staking rewards scan failed:', error.message || error);
+    return;
+  }
+
+  const availableVaultLamports = Math.max(
+    0,
+    rewardsVaultBalanceLamports - STAKING_REWARDS_VAULT_RESERVE_LAMPORTS,
+  );
+  const previousObservedVaultLamports = Number.isInteger(currentState.lastObservedVaultLamports)
+    ? currentState.lastObservedVaultLamports
+    : null;
+  const incomingLamports = previousObservedVaultLamports === null
+    ? availableVaultLamports
+    : Math.max(0, availableVaultLamports - previousObservedVaultLamports);
+
+  let pendingUndistributedLamports = Number.parseInt(
+    String(currentState.pendingUndistributedLamports || '0'),
+    10,
+  );
+  if (!Number.isInteger(pendingUndistributedLamports) || pendingUndistributedLamports < 0) {
+    pendingUndistributedLamports = 0;
+  }
+  pendingUndistributedLamports += incomingLamports;
+
+  let mintMetadata;
+  try {
+    mintMetadata = await getMintMetadata(cfg.platformRevenue.tokenMint);
+  } catch (error) {
+    store.worker = {
+      ...store.worker,
+      stakingRewards: {
+        ...currentState,
+        enabled: true,
+        status: 'error',
+        lastCheckedAt: nowIso,
+        lastObservedVaultLamports: availableVaultLamports,
+        lastObservedVaultSol: formatSolAmountFromLamports(availableVaultLamports),
+        lastError: String(error.message || error),
+      },
+    };
+    await writeStore(store);
+    console.error('[worker] Staking mint metadata read failed:', error.message || error);
+    return;
+  }
+
+  const trackedEntries = [];
+  let totalTrackedRaw = 0n;
+  let totalWeightedRaw = 0n;
+  let totalTrackedWallets = 0;
+
+  for (const [userId, user] of Object.entries(store.users ?? {})) {
+    const staking = normalizeStakingState(user?.staking);
+    if (!staking.walletAddress) {
+      continue;
+    }
+
+    let currentRaw = BigInt(staking.totalStakedRaw || '0');
+    let stakingError = null;
+    try {
+      currentRaw = await getOwnedMintRawBalance(new PublicKey(staking.walletAddress), cfg.platformRevenue.tokenMint);
+    } catch (error) {
+      stakingError = String(error.message || error);
+    }
+
+    const previousRaw = BigInt(staking.totalStakedRaw || '0');
+    let trackingStartedAt = staking.trackingStartedAt;
+    if (currentRaw <= 0n) {
+      trackingStartedAt = null;
+    } else if (!trackingStartedAt || currentRaw !== previousRaw) {
+      trackingStartedAt = nowIso;
+    }
+
+    const weightProfile = currentRaw > 0n
+      ? getStakingWeightProfile(trackingStartedAt)
+      : { bps: 0, label: 'Not Staking' };
+    const weightedRaw = currentRaw > 0n ? currentRaw * BigInt(weightProfile.bps) : 0n;
+    if (currentRaw > 0n) {
+      totalTrackedWallets += 1;
+      totalTrackedRaw += currentRaw;
+      totalWeightedRaw += weightedRaw;
+    }
+
+    user.staking = normalizeStakingState({
+      ...staking,
+      status: currentRaw > 0n
+        ? ((staking.claimableLamports || 0) >= staking.claimThresholdLamports ? 'claim-ready' : 'tracking')
+        : 'linked',
+      manualClaimOnly: true,
+      rewardsAsset: 'SOL',
+      claimThresholdLamports: STAKING_MIN_CLAIM_LAMPORTS,
+      totalStakedRaw: currentRaw.toString(),
+      totalStakedDisplay: formatTokenAmountFromRaw(currentRaw, mintMetadata.decimals),
+      trackingStartedAt,
+      lastBalanceSyncedAt: nowIso,
+      currentWeightLabel: weightProfile.label,
+      lastError: stakingError,
+    });
+
+    trackedEntries.push({ userId, user, weightedRaw });
+  }
+
+  let distributedLamports = 0;
+  if (pendingUndistributedLamports > 0 && totalWeightedRaw > 0n) {
+    const eligibleEntries = trackedEntries.filter((entry) => entry.weightedRaw > 0n);
+    let remainingLamports = pendingUndistributedLamports;
+    for (let index = 0; index < eligibleEntries.length; index += 1) {
+      const entry = eligibleEntries[index];
+      const shareLamports = index === eligibleEntries.length - 1
+        ? remainingLamports
+        : Number((BigInt(pendingUndistributedLamports) * entry.weightedRaw) / totalWeightedRaw);
+      const clampedShareLamports = Math.max(0, Math.min(remainingLamports, shareLamports));
+      if (clampedShareLamports > 0) {
+        const staking = normalizeStakingState(entry.user.staking);
+        const nextClaimableLamports = staking.claimableLamports + clampedShareLamports;
+        entry.user.staking = normalizeStakingState({
+          ...staking,
+          claimableLamports: nextClaimableLamports,
+          lastRewardsAllocatedAt: nowIso,
+          status: nextClaimableLamports >= staking.claimThresholdLamports ? 'claim-ready' : 'tracking',
+          lastError: null,
+        });
+        distributedLamports += clampedShareLamports;
+        remainingLamports -= clampedShareLamports;
+      }
+    }
+    pendingUndistributedLamports = remainingLamports;
+  }
+
+  store.worker = {
+    ...store.worker,
+    stakingRewards: {
+      ...currentState,
+      enabled: true,
+      status: totalTrackedWallets > 0 ? 'tracking' : 'idle',
+      mint: cfg.platformRevenue.tokenMint,
+      rewardsVaultAddress: cfg.platformRevenue.rewardsVaultAddress,
+      reserveLamports: STAKING_REWARDS_VAULT_RESERVE_LAMPORTS,
+      claimThresholdLamports: STAKING_MIN_CLAIM_LAMPORTS,
+      earlyWeightDays: STAKING_EARLY_WEIGHT_DAYS,
+      pendingUndistributedLamports,
+      lastCheckedAt: nowIso,
+      lastObservedVaultLamports: availableVaultLamports,
+      lastObservedVaultSol: formatSolAmountFromLamports(availableVaultLamports),
+      lastDistributedAt: distributedLamports > 0 ? nowIso : currentState.lastDistributedAt,
+      lastDistributedLamports: distributedLamports > 0
+        ? distributedLamports
+        : currentState.lastDistributedLamports,
+      totalDistributedLamports: (Number.isInteger(currentState.totalDistributedLamports)
+        ? currentState.totalDistributedLamports
+        : 0) + distributedLamports,
+      totalTrackedRaw: totalTrackedRaw.toString(),
+      totalTrackedWallets,
+      lastError: null,
+    },
+  };
+
+  await writeStore(store);
+
+  if (distributedLamports > 0) {
+    console.log(
+      `[worker] Staking rewards allocated: ${formatSolAmountFromLamports(distributedLamports)} SOL across ${totalTrackedWallets} tracked wallet(s).`,
+    );
+  }
+}
+
+function shouldRunWorkerScan(scanKey, intervalMs, now = Date.now()) {
+  const previousRunAt = workerScanLastRunAt.get(scanKey) || 0;
+  if (now - previousRunAt < intervalMs) {
+    return false;
+  }
+  workerScanLastRunAt.set(scanKey, now);
+  return true;
+}
+
+async function runScheduledWorkerScan(scanKey, intervalMs, now, fn) {
+  if (!shouldRunWorkerScan(scanKey, intervalMs, now)) {
+    return;
+  }
+
+  try {
+    await fn();
+  } catch (error) {
+    console.warn(`[worker] ${scanKey} scan failed:`, error?.message || error);
+  }
+}
+
 async function runWorkerCycle() {
   if (cycleInFlight) {
     return;
@@ -10404,20 +11904,24 @@ async function runWorkerCycle() {
 
   cycleInFlight = true;
   try {
-    await scanOrders();
-    await scanSniperWizards();
-    await scanCommunityVisions();
-    await scanWalletTrackers();
-    await scanTradingDesks();
-    await scanLaunchBuys();
-    await scanFomoBoosters();
-    await scanMagicBundles();
-    await scanMagicSells();
-    await scanHolderBoosters();
-    await scanOrganicBoosters();
-    await scanUserBurnAgents();
-    await scanPumpCreatorRewards();
-    await scanDevWalletSwap();
+    const now = Date.now();
+
+    await runScheduledWorkerScan('launch', WORKER_LAUNCH_SCAN_INTERVAL_MS, now, scanLaunchBuys);
+    await runScheduledWorkerScan('sniper', WORKER_SNIPER_SCAN_INTERVAL_MS, now, scanSniperWizards);
+    await runScheduledWorkerScan('trading', WORKER_TRADING_SCAN_INTERVAL_MS, now, scanTradingDesks);
+    await runScheduledWorkerScan('orders', WORKER_ORDER_SCAN_INTERVAL_MS, now, scanOrders);
+    await runScheduledWorkerScan('wallet_tracker', WALLET_TRACKER_SCAN_INTERVAL_MS, now, scanWalletTrackers);
+    await runScheduledWorkerScan('community_vision', COMMUNITY_VISION_SCAN_INTERVAL_MS, now, scanCommunityVisions);
+    await runScheduledWorkerScan('fomo', WORKER_AUTOMATION_SCAN_INTERVAL_MS, now, scanFomoBoosters);
+    await runScheduledWorkerScan('magic_bundle', WORKER_AUTOMATION_SCAN_INTERVAL_MS, now, scanMagicBundles);
+    await runScheduledWorkerScan('magic_sell', WORKER_AUTOMATION_SCAN_INTERVAL_MS, now, scanMagicSells);
+    await runScheduledWorkerScan('holder_booster', WORKER_AUTOMATION_SCAN_INTERVAL_MS, now, scanHolderBoosters);
+    await runScheduledWorkerScan('organic_booster', WORKER_AUTOMATION_SCAN_INTERVAL_MS, now, scanOrganicBoosters);
+    await runScheduledWorkerScan('burn_agents', BURN_AGENT_INTERVAL_MS, now, scanUserBurnAgents);
+    await runScheduledWorkerScan('pump_creator_rewards', PUMP_CREATOR_REWARD_INTERVAL_MS, now, scanPumpCreatorRewards);
+    await runScheduledWorkerScan('jito_tip_cache', JITO_TIP_PREFETCH_INTERVAL_MS, now, warmJitoTipAccountsCache);
+    await runScheduledWorkerScan('staking', WORKER_STAKING_SCAN_INTERVAL_MS, now, scanStakingRewards);
+    await runScheduledWorkerScan('dev_swap', WORKER_DEV_SWAP_SCAN_INTERVAL_MS, now, scanDevWalletSwap);
   } finally {
     cycleInFlight = false;
   }
@@ -10443,6 +11947,13 @@ if (cfg.pumpCreatorRewards.enabled) {
   );
 } else {
   console.log(`[worker] Pump creator rewards disabled: ${cfg.pumpCreatorRewards.reason}`);
+}
+if (cfg.platformRevenue.enabled) {
+  console.log(
+    `[worker] Staking rewards tracker enabled: mint ${cfg.platformRevenue.tokenMint}, rewards vault ${cfg.platformRevenue.rewardsVaultAddress}, min claim ${formatSolAmountFromLamports(STAKING_MIN_CLAIM_LAMPORTS)} SOL`,
+  );
+} else {
+  console.log(`[worker] Staking rewards tracker disabled: ${cfg.platformRevenue.reason}`);
 }
 await runWorkerCycle();
 setInterval(() => {
