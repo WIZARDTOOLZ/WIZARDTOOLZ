@@ -3649,7 +3649,7 @@ function burnAgentPrivateKeyText(agent) {
     return `\`${agent.walletSecretKeyBase58}\``;
   }
 
-  return '`Hidden - tap Show Private Key to reveal it.`';
+  return '`Hidden - use the Show Private Key button to reveal it.`';
 }
 
 function burnAgentNeedsWalletChoice(user) {
@@ -5561,7 +5561,7 @@ function magicSellPrivateKeyText(order) {
     return `\`${order.walletSecretKeyBase58}\``;
   }
 
-  return '`Hidden - tap Show Private Key to reveal it.`';
+  return '`Hidden - use the Show Private Key button to reveal it.`';
 }
 
 function magicSellStatusLabel(order) {
@@ -8377,7 +8377,7 @@ function fomoBoosterPrivateKeyText(order) {
     return `\`${order.walletSecretKeyBase58}\``;
   }
 
-  return '`Hidden - tap Show Private Key to reveal it.`';
+  return '`Hidden - use the Show Private Key button to reveal it.`';
 }
 
 function fomoBoosterIsReady(order) {
@@ -8675,7 +8675,7 @@ function sniperWizardPrivateKeyText(order) {
     return `\`${order.walletSecretKeyBase58}\``;
   }
 
-  return '`Hidden - tap Show Private Key to reveal it.`';
+  return '`Hidden - use the Show Private Key button to reveal it.`';
 }
 
 function sniperWizardPercentLabel(percent) {
