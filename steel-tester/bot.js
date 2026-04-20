@@ -6316,7 +6316,7 @@ makeResultKeyboard = function makeResultKeyboard() {
 
 homeText = function homeText() {
   return [
-    '\u{1F44B} *Welcome to Wizard Toolz!*',
+    '\u{1F44B} *Welcome to WIZARD TOOLZ!*',
     '',
     'Professional Telegram automation for reactions, trading, volume, burn systems, holder distribution, FOMO strategy, smart sell execution, bundle prep, and launch sniping.',
     '',
@@ -9989,7 +9989,7 @@ buySellText = function buySellText(user) {
 
 homeText = function homeText() {
   return [
-    '\u{1F44B} *Welcome to Wizard Toolz!*',
+    '\u{1F44B} *Welcome to WIZARD TOOLZ!*',
     '',
     'Professional Telegram automation for reactions, trading, volume, burn systems, holder distribution, FOMO strategy, smart sell execution, bundle prep, and launch sniping.',
     '',
@@ -18269,7 +18269,7 @@ buySellText = function buySellText(user) {
 
 homeText = function homeText() {
   return [
-    '\u{1F44B} *Welcome to Wizard Toolz*',
+    '\u{1F44B} *Welcome to WIZARD TOOLZ*',
     '',
     'Premium Telegram tooling for reactions, trading, volume, burn systems, holder distribution, FOMO strategy, smart sell execution, bundle prep, wallet tracking, and launch sniping.',
     '',

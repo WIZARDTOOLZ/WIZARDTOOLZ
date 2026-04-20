@@ -54,7 +54,7 @@
 
 export function buildHomeText({ cfg, menuDivider, supportUsername }) {
   return [
-    '\u{1F44B} *Welcome to Wizard Toolz*',
+    '\u{1F44B} *Welcome to WIZARD TOOLZ*',
     '',
     'A premium Telegram platform for Solana growth, trading, launches, automation, and utility tools.',
     '',
@@ -89,7 +89,7 @@ export function buildHelpText({ cfg, menuDivider, supportUsername }) {
   return [
     '\u2139\uFE0F *Help & Info*',
     '',
-    'Welcome to *Wizard Toolz* - a premium Telegram control panel for Solana growth, trading, launch, automation, and utility tools.',
+    'Welcome to *WIZARD TOOLZ* - a premium Telegram control panel for Solana growth, trading, launch, automation, and utility tools.',
     '',
     menuDivider,
     '\u2728 *How To Use The Bot*',
