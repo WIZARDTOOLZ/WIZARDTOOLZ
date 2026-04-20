@@ -27,6 +27,7 @@ import {
   MENU_LOGO_IMAGE_PATH,
   REACTION_MENU_IMAGE_PATH,
   RESIZER_PRESETS,
+  ROOT_DIR,
   SALES_BROADCAST_IMAGE_PATH,
   SNIPER_MENU_IMAGE_PATH,
   STORE_PATH,
@@ -87,6 +88,10 @@ const BUTTONS = {
   poop: { key: 'poop', label: 'Poop', emoji: '\u{1F4A9}' },
   flag: { key: 'flag', label: 'Flag', emoji: '\u{1F6A9}' },
 };
+
+if (process.env.RENDER && !process.env.TELEGRAM_STORE_PATH?.trim() && !process.env.BOT_DATA_DIR?.trim() && DATA_DIR === path.join(ROOT_DIR, 'data')) {
+  console.warn('[storage] Persistent bot state is not configured. Wallet-backed features can desync after restart/redeploy on Render. Set BOT_DATA_DIR to your persistent disk mount, such as /var/data/wizard-toolz.');
+}
 const BUNDLE_PRICING = {
   25: { amount: 25, usdPrice: 0.72, pricePerApple: 0.0288, role: 'entry / overpriced' },
   50: { amount: 50, usdPrice: 1.35, pricePerApple: 0.0270, role: 'still meh' },

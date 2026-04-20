@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -36,8 +37,20 @@ import { OnlinePumpAmmSdk, PUMP_AMM_SDK } from '@pump-fun/pump-swap-sdk';
 import { createManagedSolanaRpcPool, parseRpcUrlList } from './lib/solana/rpcPool.js';
 
 const ROOT_DIR = path.resolve('.');
-const DATA_DIR = path.join(ROOT_DIR, 'data');
-const STORE_PATH = path.join(DATA_DIR, 'telegram-store.json');
+const DEFAULT_DATA_DIR = path.join(ROOT_DIR, 'data');
+const RENDER_PERSISTENT_ROOT = '/var/data';
+const configuredDataDir = process.env.BOT_DATA_DIR?.trim() || process.env.DATA_DIR?.trim() || null;
+const autoPersistentDataDir = fsSync.existsSync(RENDER_PERSISTENT_ROOT)
+  ? path.join(RENDER_PERSISTENT_ROOT, 'wizard-toolz')
+  : null;
+const DATA_DIR = configuredDataDir || autoPersistentDataDir || DEFAULT_DATA_DIR;
+const STORE_PATH = process.env.TELEGRAM_STORE_PATH?.trim()
+  || path.join(DATA_DIR, 'telegram-store.json');
+
+if (process.env.RENDER && !process.env.TELEGRAM_STORE_PATH?.trim() && !process.env.BOT_DATA_DIR?.trim() && DATA_DIR === DEFAULT_DATA_DIR) {
+  console.warn('[storage] Persistent bot state is not configured. Wallet-backed features can desync after restart/redeploy on Render. Set BOT_DATA_DIR to your persistent disk mount, such as /var/data/wizard-toolz.');
+}
+
 const WORKER_POLL_INTERVAL_MS = parsePositiveInt(process.env.WORKER_BOT_POLL_MS, 2_000);
 const WORKER_ORDER_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_ORDER_SCAN_INTERVAL_MS, 4_000);
 const WORKER_SNIPER_SCAN_INTERVAL_MS = parsePositiveInt(process.env.WORKER_SNIPER_SCAN_INTERVAL_MS, WORKER_POLL_INTERVAL_MS);

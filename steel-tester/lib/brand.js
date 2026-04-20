@@ -1,8 +1,17 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 export const ROOT_DIR = path.resolve('.');
-export const DATA_DIR = path.join(ROOT_DIR, 'data');
-export const STORE_PATH = path.join(DATA_DIR, 'telegram-store.json');
+const DEFAULT_DATA_DIR = path.join(ROOT_DIR, 'data');
+const RENDER_PERSISTENT_ROOT = '/var/data';
+const configuredDataDir = process.env.BOT_DATA_DIR?.trim() || process.env.DATA_DIR?.trim() || null;
+const autoPersistentDataDir = fs.existsSync(RENDER_PERSISTENT_ROOT)
+  ? path.join(RENDER_PERSISTENT_ROOT, 'wizard-toolz')
+  : null;
+
+export const DATA_DIR = configuredDataDir || autoPersistentDataDir || DEFAULT_DATA_DIR;
+export const STORE_PATH = process.env.TELEGRAM_STORE_PATH?.trim()
+  || path.join(DATA_DIR, 'telegram-store.json');
 export const ASSETS_DIR = path.join(ROOT_DIR, 'assets');
 
 export const MENU_LOGO_IMAGE_PATH = path.join(ASSETS_DIR, 'trendingtoolz logo.png');
