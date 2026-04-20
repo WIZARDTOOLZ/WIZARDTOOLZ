@@ -2400,6 +2400,23 @@ function getConfig() {
 
 const cfg = getConfig();
 const bot = new Bot(cfg.telegramToken);
+bot.use(async (ctx, next) => {
+  if (typeof ctx.answerCallbackQuery === 'function') {
+    const originalAnswerCallbackQuery = ctx.answerCallbackQuery.bind(ctx);
+    ctx.answerCallbackQuery = async (...args) => {
+      try {
+        return await originalAnswerCallbackQuery(...args);
+      } catch (error) {
+        if (isExpiredCallbackQueryError(error)) {
+          return undefined;
+        }
+        throw error;
+      }
+    };
+  }
+
+  await next();
+});
 const solanaRpcPool = createManagedSolanaRpcPool({
   urls: cfg.solanaRpcUrls,
   commitment: 'confirmed',
