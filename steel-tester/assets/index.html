@@ -328,10 +328,7 @@ button{cursor:pointer;border:none;background:none;font-family:inherit;}
 }
 @media(max-width:768px){
   .burn-widget{
-    left:12px;
-    right:12px;
-    bottom:88px;
-    width:auto;
+    display:none;
   }
   .chat-widget{
     left:12px;
@@ -341,7 +338,7 @@ button{cursor:pointer;border:none;background:none;font-family:inherit;}
   }
   .tokenomics-grid{grid-template-columns:1fr;}
   .tokenomics-banner{padding:22px;}
-  body{padding-bottom:240px;}
+  body{padding-bottom:150px;}
 }
 
 /* BUTTONS */
@@ -1326,43 +1323,36 @@ footer{
     <div class="tools-grid">
 
       <div class="card reveal">
-        <div class="card-icon">&bull;</div>
         <h3>Wallet Tracker</h3>
         <p>Follow any wallet's on-chain activity in real time. Get notified of buys, sells, and new token launches. Perfect for tracking dev wallets or smart money you want to shadow.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">VIS</div>
         <h3>Vision</h3>
         <p>Watch selected X/Twitter accounts for community name changes. When a project rebrands or shifts, you'll know before most people. Early signal, competitive edge.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">X</div>
         <h3>X Followers</h3>
         <p>Grow your X presence with follower packages. Choose your package, coordinate timing with support, and watch your numbers climb. Support confirmation is required before delivery.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">ENG</div>
         <h3>Engagement Services</h3>
         <p>Views, likes, reposts, clicks, and more &mdash; across X, Facebook, Reddit, Telegram, Discord, and TikTok. Contact support to discuss what you need and get a quote.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">SPC</div>
         <h3>Spaces Booster</h3>
         <p>X/Twitter Spaces listener packages &mdash; 500 listeners for 30 min or 120 min sessions. Confirm slot availability with support before payment. Proof of space beats empty rooms every time.</p>
       </div>
 
         <div class="card reveal">
-        <div class="card-icon">VAN</div>
         <h3>Vanity Wallet</h3>
         <p>Create custom vanity wallets with short clean prefixes or suffixes through the bot. Example: start with <strong>WIZ</strong> or end with <strong>TOOL</strong>. Great for branding, team wallets, and launch presentation.</p>
       </div>
 
       <div class="card reveal">
-        <div class="card-icon">NEW</div>
         <h3>Custom Tools</h3>
         <p>Need something not listed here? Message support. The Wizard Toolz team builds custom Telegram tools for projects with specific needs. Tell us what you're trying to do.</p>
       </div>
@@ -1490,7 +1480,7 @@ footer{
     <div class="tokenomics-banner reveal">
       <div>
         <h3>Live Burn Tracker</h3>
-        <p>The floating burn widget reads the live token supply from chain and gives visitors a clean view of how much supply has been burned, how much remains, and how the burn progresses over time.</p>
+        <p>The floating burn widget reads the live token supply from chain and gives visitors a clean view of how much supply has been burned. On mobile, the full burn view lives on the tokenomics page so it does not take over the site.</p>
       </div>
       <a class="btn btn-primary" href="tokenomics.html">Open Full Tokenomics Page &rarr;</a>
     </div>
