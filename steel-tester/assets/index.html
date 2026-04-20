@@ -16,12 +16,12 @@
 <meta property="og:title" content="WIZARD TOOLZ">
 <meta property="og:description" content="Solana growth, trading, launch, sniper, volume, and automation tools built around one Telegram bot.">
 <meta property="og:url" content="https://wizardtoolz.onrender.com/">
-<meta property="og:image" content="https://wizardtoolz.onrender.com/favicon-512.png">
+<meta property="og:image" content="https://wizardtoolz.onrender.com/wizard-toolz-share.png">
 <meta property="og:image:alt" content="WIZARD TOOLZ logo">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="WIZARD TOOLZ">
 <meta name="twitter:description" content="Solana growth, trading, launch, sniper, volume, and automation tools built around one Telegram bot.">
-<meta name="twitter:image" content="https://wizardtoolz.onrender.com/favicon-512.png">
+<meta name="twitter:image" content="https://wizardtoolz.onrender.com/wizard-toolz-share.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -483,12 +483,12 @@ nav{
 }
 .nav-inner{
   display:flex;align-items:center;justify-content:space-between;
-  min-height:72px;gap:12px;
+  min-height:72px;gap:10px;
 }
 .nav-logo{
   display:flex;align-items:center;gap:10px;
   font-family:'Cinzel',serif;
-  font-size:clamp(14px,1.35vw,17px);font-weight:700;
+  font-size:clamp(13px,1.05vw,16px);font-weight:700;
   color:var(--white);
   line-height:1.05;
   white-space:nowrap;
@@ -498,7 +498,7 @@ nav{
 .nav-logo img{width:32px;height:32px;object-fit:contain;border-radius:8px;}
 .nav-logo span{display:block;letter-spacing:.02em;}
 .nav-links{
-  display:flex;align-items:center;gap:28px;
+  display:none;align-items:center;gap:28px;
   list-style:none;
   flex:1 1 auto;
   justify-content:center;
@@ -510,12 +510,11 @@ nav{
   white-space:nowrap;
 }
 .nav-links a:hover{color:var(--white);}
-.nav-ctas{display:flex;gap:8px;align-items:center;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;min-width:0;}
+.nav-ctas{display:flex;gap:7px;align-items:center;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;min-width:0;}
 .hamburger{display:none;flex-direction:column;gap:5px;padding:4px;}
 .hamburger span{width:22px;height:2px;background:var(--text);border-radius:2px;transition:.3s;}
 
 @media(max-width:1320px){
-  .nav-links{display:none;}
   .nav-inner{min-height:72px;padding:10px 0;}
   .nav-logo{font-size:16px;gap:8px;}
   .nav-logo img{width:30px;height:30px;}
@@ -524,12 +523,12 @@ nav{
   .hamburger{display:none;}
 }
 
-@media(max-width:1120px){
-  .nav-ctas .btn-outline{display:none;}
+@media(max-width:1180px){
+  .nav-ctas .btn-green:first-child{display:none;}
 }
 
-@media(max-width:960px){
-  .nav-ctas .btn-green:first-child{display:none;}
+@media(max-width:980px){
+  .nav-ctas .btn-outline{display:none;}
 }
 
 @media(max-width:820px){
@@ -1626,7 +1625,7 @@ footer{
         <div class="comm-icon">X</div>
         <h3>Official X</h3>
         <p>Follow the official X account for updates, launchpad teasers, announcements, and major feature drops.</p>
-        <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank" style="width:100%;justify-content:center;">Follow @wizardtoolz</a>
+        <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank" style="width:100%;justify-content:center;">Follow on X</a>
       </div>
       <div class="comm-card reveal">
         <div class="comm-icon">AL</div>
