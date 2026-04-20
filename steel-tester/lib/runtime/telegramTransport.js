@@ -92,6 +92,8 @@ export async function startPollingTransport(bot) {
 export async function startWebhookTransport(bot, cfg) {
   const webhookHandler = webhookCallback(bot, 'http', {
     secretToken: cfg.telegramWebhookSecret,
+    onTimeout: 'return',
+    timeoutMilliseconds: 1500,
   });
   const webhookUrl = buildWebhookUrl(cfg);
   const server = http.createServer(async (req, res) => {
