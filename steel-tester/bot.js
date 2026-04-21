@@ -88,6 +88,10 @@ const BUTTONS = {
   poop: { key: 'poop', label: 'Poop', emoji: '\u{1F4A9}' },
   flag: { key: 'flag', label: 'Flag', emoji: '\u{1F6A9}' },
 };
+const WIZARD_PROTECTED_PAIR_IDS = new Set([
+  'bb21ye7jegbrag3menv7mahhasor52wneufquumohxve',
+]);
+const WIZARD_ALLOWED_REACTIONS = new Set(['rocket', 'fire']);
 
 if (process.env.RENDER && !process.env.TELEGRAM_STORE_PATH?.trim() && !process.env.BOT_DATA_DIR?.trim() && DATA_DIR === path.join(ROOT_DIR, 'data')) {
   console.warn('[storage] Persistent bot state is not configured. Wallet-backed features can desync after restart/redeploy on Render. Set BOT_DATA_DIR to your persistent disk mount, such as /var/data/wizard-toolz.');
@@ -5969,6 +5973,48 @@ function hasCustomTarget(user) {
   return Boolean(user.selection.target);
 }
 
+function getPairIdFromTargetUrl(targetUrl) {
+  if (!targetUrl || typeof targetUrl !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(targetUrl);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length >= 3 && segments[0] === 'solana') {
+      return segments[1] === 'pair'
+        ? (segments[2] || null)
+        : (segments[1] || null);
+    }
+    if (segments.length >= 2 && segments[0] === 'pair') {
+      return segments[1] || null;
+    }
+  } catch {}
+
+  return null;
+}
+
+function targetIsProtectedReactionPair(targetUrl) {
+  const pairId = getPairIdFromTargetUrl(targetUrl);
+  return Boolean(pairId && WIZARD_PROTECTED_PAIR_IDS.has(String(pairId).toLowerCase()));
+}
+
+function isAllowedReactionForTarget(buttonKey, targetUrl) {
+  if (!buttonKey || !BUTTONS[buttonKey]) {
+    return false;
+  }
+
+  if (!targetIsProtectedReactionPair(targetUrl)) {
+    return true;
+  }
+
+  return WIZARD_ALLOWED_REACTIONS.has(buttonKey);
+}
+
+function getAllowedReactionButtonsForTarget(targetUrl) {
+  return Object.values(BUTTONS).filter((button) => isAllowedReactionForTarget(button.key, targetUrl));
+}
+
 function startBackRoute(user) {
   if (user.selection.amount) {
     return 'nav:amount';
@@ -6274,7 +6320,7 @@ makeHomeKeyboard = function makeHomeKeyboard() {
 
 makeButtonKeyboard = function makeButtonKeyboard(selectedButton, user) {
   const keyboard = new InlineKeyboard();
-  for (const button of Object.values(BUTTONS)) {
+  for (const button of getAllowedReactionButtonsForTarget(user?.selection?.target)) {
     const label = selectedButton === button.key
       ? `\u2705 ${button.emoji} ${button.label}`
       : `${button.emoji} ${button.label}`;
@@ -13628,7 +13674,7 @@ async function runJob(userId, user, onProgress) {
 
       match = trimmed.match(/^Session (\d+): reaction baseline /);
       if (match) {
-        return `Session ${match[1]}: reaction baseline ready`;
+        return `Session ${match[1]}: ready to click`;
       }
 
       match = trimmed.match(/^Session (\d+): UI click .*$/);
@@ -13636,59 +13682,105 @@ async function runJob(userId, user, onProgress) {
         return `Session ${match[1]}: clicked reaction`;
       }
 
+      match = trimmed.match(/^Session (\d+): Turnstile detected, waiting for Steel solve$/);
+      if (match) {
+        return `Session ${match[1]}: challenge detected, solving`;
+      }
+
+      match = trimmed.match(/^Session (\d+): waiting for post-solve validation window .*"waitMs":(\d+)/);
+      if (match) {
+        return `Session ${match[1]}: challenge solved, waiting to retry`;
+      }
+
       match = trimmed.match(/^Session (\d+): reaction POST failed, attempting beacon rescue /);
       if (match) {
-        return `Session ${match[1]}: native submit failed, trying rescue`;
+        return `Session ${match[1]}: first try missed, trying again`;
       }
 
       match = trimmed.match(/^Session (\d+): rescue attempts completed /);
       if (match) {
-        return `Session ${match[1]}: rescue submitted`;
+        return `Session ${match[1]}: retry submitted`;
       }
 
       match = trimmed.match(/^Session (\d+): primary confirmation race failed, retrying extended verification /);
       if (match) {
-        return `Session ${match[1]}: retrying verification`;
+        return `Session ${match[1]}: checking if it landed`;
       }
 
       match = trimmed.match(/^Session (\d+): manual Turnstile rescue completed /);
       if (match) {
-        return `Session ${match[1]}: challenge solved, retrying`;
+        return `Session ${match[1]}: challenge solved, trying again`;
       }
 
       match = trimmed.match(/^Session (\d+): retrying native UI click after challenge\/rescue /);
       if (match) {
-        return `Session ${match[1]}: retrying native click`;
+        return `Session ${match[1]}: trying again`;
+      }
+
+      match = trimmed.match(/^Session (\d+): post-solve reaction retry attempt (\d+) /);
+      if (match) {
+        return `Session ${match[1]}: trying again`;
+      }
+
+      match = trimmed.match(/^Session (\d+): native retry attempt (\d+) /);
+      if (match) {
+        return `Session ${match[1]}: trying again`;
+      }
+
+      match = trimmed.match(/^Session (\d+): post-solve direct submit accepted /);
+      if (match) {
+        return `Session ${match[1]}: retry submitted`;
       }
 
       match = trimmed.match(/^Session (\d+): reaction confirmed /);
       if (match) {
-        return `Session ${match[1]}: reaction confirmed`;
+        return `Session ${match[1]}: worked`;
+      }
+
+      match = trimmed.match(/^Session (\d+): reaction verified after delayed state sync .*"baselineCount":(\d+).*"currentCount":(\d+)/);
+      if (match) {
+        return `Session ${match[1]}: worked (${match[2]} -> ${match[3]})`;
       }
 
       match = trimmed.match(/^Session (\d+): reaction verified after delayed state sync /);
       if (match) {
-        return `Session ${match[1]}: reaction verified`;
+        return `Session ${match[1]}: worked`;
+      }
+
+      match = trimmed.match(/^Recovered delayed reaction confirmations from count sync .*"recovered":(\d+).*"confirmed":(\d+)/);
+      if (match) {
+        return `Count update caught ${match[1]} more. Total working: ${match[2]}`;
       }
 
       match = trimmed.match(/^Session (\d+): failed /);
       if (match) {
-        return `Session ${match[1]}: failed`;
+        return `Session ${match[1]}: didn’t land, moving on`;
       }
 
       match = trimmed.match(/^Session (\d+): released Steel session$/);
       if (match) {
-        return `Session ${match[1]}: session released`;
+        return null;
       }
 
       match = trimmed.match(/^Reaction progress .*"confirmed":(\d+),"requested":(\d+),"remaining":(\d+),"nextAttempt":(\d+)/);
       if (match) {
-        return `Progress: ${match[1]}/${match[2]} confirmed, ${match[3]} remaining, starting attempt ${match[4]}`;
+        return `Progress: ${match[1]}/${match[2]} working, ${match[3]} left`;
       }
 
       match = trimmed.match(/^Reaction target not fully met before attempt cap /);
       if (match) {
-        return 'Reaction target not fully met before attempt cap';
+        return 'Stopped before the full target was reached';
+      }
+
+      if (
+        trimmed.includes('requested Steel captcha solve')
+        || trimmed.includes('captcha solve result')
+        || trimmed.includes('solved Turnstile token found on page')
+        || trimmed.includes('post-solve direct submit not verified yet')
+        || trimmed.includes('Turnstile still visible after solve')
+        || trimmed.includes('captcha poll failed')
+      ) {
+        return null;
       }
 
       return trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed;
@@ -13714,7 +13806,7 @@ async function runJob(userId, user, onProgress) {
         return;
       }
 
-      const label = source === 'stderr' ? `ERR: ${simplified}` : simplified;
+      const label = simplified;
       await onProgress(label.slice(0, 280));
     };
 
@@ -16941,6 +17033,13 @@ bot.callbackQuery(/^button:(.+)$/, async (ctx) => {
     return;
   }
 
+  const user = await getUserState(String(ctx.from.id));
+  if (!isAllowedReactionForTarget(buttonKey, user.selection.target)) {
+    await ctx.answerCallbackQuery({ text: 'This pair only allows Rocket or Fire.' });
+    await renderScreen(ctx, 'start', user);
+    return;
+  }
+
   const updated = await updateUserState(String(ctx.from.id), (draft) => {
     draft.selection.button = buttonKey;
     draft.awaitingTargetInput = false;
@@ -17041,6 +17140,9 @@ bot.on('message:text', async (ctx) => {
 
     const updated = await updateUserState(userId, (draft) => {
       draft.selection.target = parsed.toString();
+      if (!isAllowedReactionForTarget(draft.selection.button, draft.selection.target)) {
+        draft.selection.button = null;
+      }
       draft.awaitingTargetInput = false;
       return draft;
     });
