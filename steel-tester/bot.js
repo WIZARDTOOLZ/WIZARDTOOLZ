@@ -133,6 +133,7 @@ const STAKING_UNSTAKE_COOLDOWN_DAYS = 7;
 const STAKING_EARLY_WEIGHT_DAYS = 7;
 const STAKING_REWARDS_VAULT_FEE_RESERVE_LAMPORTS = parseSolToLamports('0.001');
 const vanityWalletJobs = new Map();
+const activeRunnerJobs = new Map();
 
 let paymentPollInFlight = false;
 let solUsdRateCache = null;
@@ -6391,6 +6392,12 @@ makeResultKeyboard = function makeResultKeyboard() {
     .text('\u{1F3E0} Home', 'nav:home')
     .row()
     .text('\u{1F504} Refresh', 'refresh:payment');
+};
+
+makeRunningJobKeyboard = function makeRunningJobKeyboard() {
+  return new InlineKeyboard()
+    .text('\u23F9\uFE0F Stop', 'run:stop')
+    .text('\u{1F3E0} Home', 'nav:home');
 };
 
 homeText = function homeText() {
@@ -13522,7 +13529,7 @@ async function pollPendingPayments() {
   }
 }
 
-async function runJob(user, onProgress) {
+async function runJob(userId, user, onProgress) {
   const env = buildRunnerEnv(user);
 
   if (cfg.runnerMode === 'mock') {
@@ -13564,6 +13571,7 @@ async function runJob(user, onProgress) {
       shell: true,
       windowsHide: true,
     });
+    activeRunnerJobs.set(userId, child);
 
     let stdout = '';
     let stderr = '';
@@ -13708,6 +13716,7 @@ async function runJob(user, onProgress) {
     child.on('error', reject);
     child.on('close', async (code) => {
       await progressChain;
+      activeRunnerJobs.delete(userId);
       if (stdoutBuffer.trim()) {
         await emitProgressLine(stdoutBuffer, 'stdout');
       }
@@ -13752,13 +13761,13 @@ async function handleRun(ctx) {
       '',
       'Preparing runner startup...',
     ].join('\n'),
-    { parse_mode: 'Markdown' },
+    { parse_mode: 'Markdown', reply_markup: makeRunningJobKeyboard() },
   );
 
   try {
     const updates = [];
     let lastEditAt = 0;
-    const result = await runJob(user, async (message) => {
+    const result = await runJob(userId, user, async (message) => {
       updates.push(escapeMarkdown(message));
       const now = Date.now();
       if (now - lastEditAt < 700) {
@@ -16946,6 +16955,23 @@ bot.callbackQuery(/^amount:(\d+):(trial|paid)$/, async (ctx) => {
 });
 
 bot.callbackQuery('run:confirm', handleRun);
+
+bot.callbackQuery('run:stop', async (ctx) => {
+  const userId = String(ctx.from.id);
+  const child = activeRunnerJobs.get(userId);
+
+  if (!child) {
+    await ctx.answerCallbackQuery({ text: 'No active run found.' });
+    return;
+  }
+
+  try {
+    child.kill('SIGTERM');
+  } catch {}
+
+  activeRunnerJobs.delete(userId);
+  await ctx.answerCallbackQuery({ text: 'Stopping run...' });
+});
 
 bot.on('message:text', async (ctx) => {
   const userId = String(ctx.from.id);
