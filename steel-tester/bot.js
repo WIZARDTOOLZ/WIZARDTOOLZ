@@ -6418,9 +6418,10 @@ homeText = function homeText() {
     'Raydium • PumpSwap • Meteora • Pumpfun • Meteora DBC • Bags • LetsBonk • LaunchLab',
     '',
     '\u{1F4CA} Plans from 1 SOL • \u{1F6E1}\uFE0F Professional execution • \u{1F381} Free trial available',
-    `\u{1F91D} Need help? @${SUPPORT_USERNAME}`,
+    `\u{1F91D} Need help? https://t.me/${SUPPORT_USERNAME}`,
     '\u{1F4AC} Community chat: https://t.me/wizardtoolz',
     '\u{1F514} Alerts channel: https://t.me/wizardtoolz_alerts',
+    '\u{1FA99} Pump coin link is available in the menu button below.',
     '',
     'Ready? Choose a service below.',
   ].join('\n');
