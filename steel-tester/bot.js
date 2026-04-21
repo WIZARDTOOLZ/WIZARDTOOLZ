@@ -17026,21 +17026,26 @@ bot.on('message:text', async (ctx) => {
       return draft;
     });
 
-    await ctx.reply(
-      [
-        '*Custom Target Updated*',
-        '',
-        selectionSnapshot(updated),
-      ].join('\n'),
-      {
-        parse_mode: 'Markdown',
-        reply_markup: updated.selection.button
-          ? hasLaunchAccess(updated)
-            ? makeConfirmKeyboard(updated)
-            : makePaymentKeyboard(updated)
-          : makeButtonKeyboard(updated.selection.button, updated),
-      },
-    );
+    const nextKeyboard = updated.selection.button
+      ? hasLaunchAccess(updated)
+        ? makeConfirmKeyboard(updated)
+        : makePaymentKeyboard(updated)
+      : makeButtonKeyboard(updated.selection.button, updated);
+
+    const summaryLines = [
+      'Custom Target Updated',
+      '',
+      `Profile: ${buttonDisplay(updated.selection.button)}`,
+      `Bundle: ${amountLabel(updated.selection.amount)}`,
+      `Target: ${updated.selection.target}`,
+      `Checkout: ${paymentStatusLabel(updated)}`,
+      `Run state: ${readinessLabel(updated)}`,
+    ];
+
+    await ctx.reply(summaryLines.join('\n'), {
+      reply_markup: nextKeyboard,
+      link_preview_options: { is_disabled: true },
+    });
     return;
   }
 
