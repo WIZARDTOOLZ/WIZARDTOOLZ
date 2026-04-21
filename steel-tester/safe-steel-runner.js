@@ -42,6 +42,9 @@ const BUTTONS = {
       page.locator('xpath=(//button[contains(@class,"chakra-button")][.//path[contains(@d,"M8.04,3.32")]])[1]'),
   },
 };
+const PROTECTED_PAIR_REACTION_RULES = {
+  bb21ye7jegbrag3menv7mahhasor52wneufquumohxve: new Set(['rocket', 'fire']),
+};
 
 function parsePairIdentity(targetUrl) {
   const url = new URL(targetUrl);
@@ -120,10 +123,16 @@ function getConfig() {
     throw new Error(`Missing or invalid environment values: ${missing.join(', ')}`);
   }
 
+  const pairIdentity = parsePairIdentity(targetUrl);
+  const protectedRule = PROTECTED_PAIR_REACTION_RULES[String(pairIdentity.pairId).toLowerCase()];
+  if (protectedRule && !protectedRule.has(buttonKey)) {
+    throw new Error(`Reaction ${buttonKey} is not allowed for protected pair ${pairIdentity.pairId}.`);
+  }
+
   return {
     apiKey,
     targetUrl,
-    pairIdentity: parsePairIdentity(targetUrl),
+    pairIdentity,
     buttonKey,
     button: BUTTONS[buttonKey],
     reactionKey: REACTION_KEYS[buttonKey],
@@ -1233,6 +1242,8 @@ async function runSingleSession(index, cfg, steel) {
   const result = {
     index,
     sessionId: null,
+    baselineReactionCount: null,
+    observedReactionCount: null,
     clicked: false,
     turnstileDetected: false,
     turnstileTokenLength: null,
@@ -1313,6 +1324,7 @@ async function runSingleSession(index, cfg, steel) {
     log(`Session ${index + 1}: reaction row ready`, reactionRowState);
 
     const initialDomState = await getReactionDomState(page, cfg.buttonKey);
+    result.baselineReactionCount = Number.isFinite(initialDomState?.count) ? initialDomState.count : null;
     log(`Session ${index + 1}: reaction baseline`, {
       dom: initialDomState,
       pairIdentity: cfg.pairIdentity,
@@ -1439,6 +1451,9 @@ async function runSingleSession(index, cfg, steel) {
       result.reactionTotals = confirmation.totals;
       result.reactionResponseUrl = confirmation.responseUrl;
       result.reactionVerificationSource = result.turnstileDetected ? 'ui-response-after-steel-solve' : 'ui-response';
+      result.observedReactionCount = Array.isArray(confirmation?.totals)
+        ? null
+        : null;
       log(`Session ${index + 1}: reaction confirmed`, {
         reaction: confirmation.confirmedReaction,
         totals: confirmation.totals,
@@ -1452,6 +1467,7 @@ async function runSingleSession(index, cfg, steel) {
       result.reactionTotals = verified.apiState?.payload?.reactions ?? null;
       result.reactionResponseUrl = verified.apiState?.url ?? null;
       result.reactionVerificationSource = verified.verificationSource;
+      result.observedReactionCount = Number.isFinite(verified?.domState?.count) ? verified.domState.count : null;
       log(`Session ${index + 1}: reaction verified after delayed state sync`, {
         source: verified.verificationSource,
         reaction: result.confirmedReaction,
@@ -1574,6 +1590,7 @@ async function main() {
 
   let confirmedCount = 0;
   let attemptIndex = 0;
+  let highestObservedReactionCount = null;
 
   while (confirmedCount < cfg.sessionCount && attemptIndex < cfg.maxSessionAttempts) {
     const remaining = cfg.sessionCount - confirmedCount;
@@ -1591,8 +1608,34 @@ async function main() {
 
     const result = await runSingleSession(attemptIndex, cfg, steel);
     results.push(result);
+
+    if (Number.isFinite(result.baselineReactionCount)) {
+      if (!Number.isFinite(highestObservedReactionCount)) {
+        highestObservedReactionCount = result.baselineReactionCount;
+      } else if (result.baselineReactionCount > highestObservedReactionCount) {
+        const recovered = result.baselineReactionCount - highestObservedReactionCount;
+        highestObservedReactionCount = result.baselineReactionCount;
+        confirmedCount += recovered;
+        log('Recovered delayed reaction confirmations from count sync', {
+          recovered,
+          baselineCount: result.baselineReactionCount,
+          confirmed: confirmedCount,
+        });
+      }
+    }
+
     if (result.reactionConfirmed) {
       confirmedCount += 1;
+    }
+
+    if (Number.isFinite(result.observedReactionCount)) {
+      if (!Number.isFinite(highestObservedReactionCount) || result.observedReactionCount > highestObservedReactionCount) {
+        highestObservedReactionCount = result.observedReactionCount;
+      }
+    }
+
+    if (confirmedCount > cfg.sessionCount) {
+      confirmedCount = cfg.sessionCount;
     }
 
     attemptIndex += 1;
