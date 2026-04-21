@@ -1026,6 +1026,10 @@ footer{
       <span class="hero-ca-label">CA</span>
       <span>HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump</span>
     </div>
+    <div class="hero-ca" style="margin-top:12px;">
+      <span class="hero-ca-label">Rewards Vault</span>
+      <span id="heroRewardsVaultBalance">Loading...</span>
+    </div>
   </div>
 </section>
 
@@ -1856,20 +1860,31 @@ function formatSolBalance(value) {
 async function refreshRewardsVaultWidget() {
   const balanceNode = document.getElementById('rewardsVaultBalance');
   const addressNode = document.getElementById('rewardsVaultAddress');
+  const heroBalanceNode = document.getElementById('heroRewardsVaultBalance');
   if (!balanceNode || !addressNode) return;
 
   addressNode.textContent = WIZARD_TOKENOMICS.rewardsVaultAddress;
+  if (heroBalanceNode) {
+    heroBalanceNode.textContent = 'Loading...';
+  }
 
   try {
     const response = await fetch('/api/rewards-vault');
     if (!response.ok) throw new Error(`API ${response.status}`);
     const payload = await response.json();
-    balanceNode.textContent = formatSolBalance(Number(payload?.sol));
+    const formattedBalance = formatSolBalance(Number(payload?.sol));
+    balanceNode.textContent = formattedBalance;
+    if (heroBalanceNode) {
+      heroBalanceNode.textContent = formattedBalance;
+    }
     if (payload?.address) {
       addressNode.textContent = payload.address;
     }
   } catch {
     balanceNode.textContent = 'Unavailable';
+    if (heroBalanceNode) {
+      heroBalanceNode.textContent = 'Unavailable';
+    }
   }
 }
 
