@@ -233,6 +233,7 @@ async function requestCaptchaSolve(steel, sessionId, sessionIndex) {
 async function waitForCaptchaSolve(steel, page, sessionId, sessionIndex, cfg) {
   const deadline = Date.now() + cfg.captchaSolveMs;
   let solveRequested = false;
+  let retriedSolve = false;
   let lastStatusSnapshot = null;
 
   while (Date.now() < deadline) {
@@ -275,10 +276,9 @@ async function waitForCaptchaSolve(steel, page, sessionId, sessionIndex, cfg) {
         const taskStatus = task?.status ?? task?.state ?? null;
 
         if (taskStatus === 'solved' || taskStatus === 'completed') {
-          const cleared = await waitForTurnstileToClear(page, Math.max(cfg.postSolveSettleMs, 8000));
           return {
             solved: true,
-            status: cleared ? 'solved' : 'solved_pending_clear',
+            status: taskStatus,
             detail: task,
           };
         }
@@ -304,8 +304,9 @@ async function waitForCaptchaSolve(steel, page, sessionId, sessionIndex, cfg) {
       return { solved: true, status: 'turnstile_cleared', detail: lastStatusSnapshot };
     }
 
-    if (Date.now() + cfg.captchaPollMs * 2 < deadline) {
+    if (!retriedSolve && Date.now() + cfg.captchaPollMs * 6 < deadline) {
       await requestCaptchaSolve(steel, sessionId, sessionIndex);
+      retriedSolve = true;
     }
   }
 
@@ -1280,12 +1281,26 @@ async function runSingleSession(index, cfg, steel) {
         throw new Error(`Steel captcha solve failed: ${solveResult.status}`);
       }
 
-      const turnstileStillVisible = await detectTurnstile(page).catch(() => false);
-      if (turnstileStillVisible) {
-        log(`Session ${index + 1}: Turnstile still visible after solve, forcing extra settle`, {
+      const solveValidationWaitMs = Math.max(
+        cfg.postSolveSettleMs,
+        Number.isFinite(solveResult?.detail?.validationTime)
+          ? solveResult.detail.validationTime + 1000
+          : 0,
+      );
+
+      if (solveValidationWaitMs > 0) {
+        log(`Session ${index + 1}: waiting for post-solve validation window`, {
+          waitMs: solveValidationWaitMs,
           status: solveResult.status,
         });
-        await sleep(Math.max(cfg.postSolveSettleMs, 6000));
+        await sleep(solveValidationWaitMs);
+      }
+
+      const turnstileStillVisible = await detectTurnstile(page).catch(() => false);
+      if (turnstileStillVisible) {
+        log(`Session ${index + 1}: Turnstile still visible after solve`, {
+          status: solveResult.status,
+        });
       }
 
       const solvedToken = await getSolvedTurnstileToken(page).catch(() => null);
@@ -1319,7 +1334,6 @@ async function runSingleSession(index, cfg, steel) {
         }
       }
 
-      await sleep(cfg.postSolveSettleMs);
       if (!raceOutcome) {
         raceOutcome = await attemptReactionWithRetries(
           page,
