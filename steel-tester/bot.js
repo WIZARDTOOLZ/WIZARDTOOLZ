@@ -6394,7 +6394,7 @@ makeResultKeyboard = function makeResultKeyboard() {
     .text('\u{1F504} Refresh', 'refresh:payment');
 };
 
-makeRunningJobKeyboard = function makeRunningJobKeyboard() {
+const makeRunningJobKeyboard = function makeRunningJobKeyboard() {
   return new InlineKeyboard()
     .text('\u23F9\uFE0F Stop', 'run:stop')
     .text('\u{1F3E0} Home', 'nav:home');
