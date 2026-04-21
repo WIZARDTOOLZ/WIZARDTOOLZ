@@ -14106,13 +14106,13 @@ bot.callbackQuery('entry:reaction', async (ctx) => {
     draft.selection.amount = null;
     draft.selection.usingFreeTrial = false;
     draft.selection.target = cfg.defaultTarget;
-    draft.awaitingTargetInput = true;
+    draft.awaitingTargetInput = false;
     draft.payment = createDefaultPaymentState();
     return draft;
   });
 
-  await ctx.answerCallbackQuery({ text: 'Send the target URL in chat.' });
-  await renderScreen(ctx, 'target', updated);
+  await ctx.answerCallbackQuery();
+  await renderScreen(ctx, 'start', updated);
 });
 
 bot.callbackQuery('nav:amount', async (ctx) => {
