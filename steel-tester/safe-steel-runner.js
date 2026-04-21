@@ -323,31 +323,69 @@ async function markReactionButton(page, buttonKey) {
       return false;
     };
 
-    const foundIndex = buttons.findIndex((button) => {
-      if (!isMatch(button)) {
-        return false;
-      }
+    const parseCount = (text) => {
+      const match = String(text || '').match(/(\d[\d,]*)\s*$/);
+      return match ? Number.parseInt(match[1].replace(/,/g, ''), 10) : null;
+    };
 
-      const rect = button.getBoundingClientRect();
-      const style = window.getComputedStyle(button);
-      return style.display !== 'none' &&
-        style.visibility !== 'hidden' &&
-        style.opacity !== '0' &&
-        rect.width > 0 &&
-        rect.height > 0;
-    });
-    if (foundIndex < 0) {
+    const candidates = buttons
+      .map((button, index) => {
+        if (!isMatch(button)) {
+          return null;
+        }
+
+        const rect = button.getBoundingClientRect();
+        const style = window.getComputedStyle(button);
+        const visible = style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.opacity !== '0' &&
+          rect.width > 0 &&
+          rect.height > 0;
+
+        if (!visible) {
+          return null;
+        }
+
+        const text = (button.textContent || '').trim();
+        return {
+          index,
+          button,
+          text,
+          count: parseCount(text),
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const aHasCount = typeof a.count === 'number';
+        const bHasCount = typeof b.count === 'number';
+        if (aHasCount !== bHasCount) {
+          return aHasCount ? -1 : 1;
+        }
+        if (a.top !== b.top) {
+          return a.top - b.top;
+        }
+        return a.left - b.left;
+      });
+
+    if (candidates.length === 0) {
       return null;
     }
 
-    const button = buttons[foundIndex];
+    const best = candidates[0];
+    const button = best.button;
     button.setAttribute('data-reaction-target', target);
-    const rect = button.getBoundingClientRect();
     return {
-      index: foundIndex,
-      text: (button.textContent || '').trim(),
-      width: rect.width,
-      height: rect.height,
+      index: best.index,
+      text: best.text,
+      count: best.count,
+      width: best.width,
+      height: best.height,
+      top: best.top,
+      left: best.left,
     };
   }, buttonKey);
 
@@ -389,15 +427,55 @@ async function waitForReactionRowReady(page, buttonKey, timeoutMs) {
         return false;
       };
 
-      const button = buttons.find((candidate) => isMatch(candidate));
-      if (!button) {
+      const parseCount = (text) => {
+        const match = String(text || '').match(/(\d[\d,]*)\s*$/);
+        return match ? Number.parseInt(match[1].replace(/,/g, ''), 10) : null;
+      };
+
+      const candidates = buttons
+        .map((candidate) => {
+          if (!isMatch(candidate)) {
+            return null;
+          }
+          const rect = candidate.getBoundingClientRect();
+          const style = window.getComputedStyle(candidate);
+          const visible = style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            style.opacity !== '0' &&
+            rect.width > 0 &&
+            rect.height > 0;
+          if (!visible) {
+            return null;
+          }
+          const text = (candidate.textContent || '').trim();
+          return {
+            text,
+            count: parseCount(text),
+            top: rect.top,
+            left: rect.left,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aHasCount = typeof a.count === 'number';
+          const bHasCount = typeof b.count === 'number';
+          if (aHasCount !== bHasCount) {
+            return aHasCount ? -1 : 1;
+          }
+          if (a.top !== b.top) {
+            return a.top - b.top;
+          }
+          return a.left - b.left;
+        });
+
+      const best = candidates[0];
+      if (!best) {
         return { ready: false, reason: 'missing' };
       }
 
       const title = document.title || '';
-      const text = (button.textContent || '').trim();
-      const ready = !title.startsWith('Loading ') && /^\d+$/.test(text);
-      return { ready, title, text };
+      const ready = !title.startsWith('Loading ') && typeof best.count === 'number';
+      return { ready, title, text: best.text, count: best.count };
     }, buttonKey);
 
     if (state.ready) {
@@ -510,7 +588,12 @@ async function getReactionDomState(page, buttonKey) {
   return page.evaluate(
     ({ target }) => {
       const buttons = Array.from(document.querySelectorAll('button.chakra-button'));
-      const button = buttons.find((candidate) => {
+      const parseCount = (text) => {
+        const match = String(text || '').match(/(\d[\d,]*)\s*$/);
+        return match ? Number.parseInt(match[1].replace(/,/g, ''), 10) : null;
+      };
+
+      const isMatch = (candidate) => {
         if (target === 'rocket') {
           return Array.from(candidate.querySelectorAll('polygon')).some((node) =>
             (node.getAttribute('points') || '').includes('3.77,71.73'));
@@ -525,7 +608,47 @@ async function getReactionDomState(page, buttonKey) {
         }
         return Array.from(candidate.querySelectorAll('path')).some((node) =>
           (node.getAttribute('d') || '').includes('M8.04,3.32'));
-      });
+      };
+
+      const candidates = buttons
+        .map((candidate) => {
+          if (!isMatch(candidate)) {
+            return null;
+          }
+          const rect = candidate.getBoundingClientRect();
+          const style = window.getComputedStyle(candidate);
+          const visible = style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            style.opacity !== '0' &&
+            rect.width > 0 &&
+            rect.height > 0;
+          if (!visible) {
+            return null;
+          }
+          const text = (candidate.textContent || '').trim();
+          return {
+            button: candidate,
+            text,
+            count: parseCount(text),
+            top: rect.top,
+            left: rect.left,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aHasCount = typeof a.count === 'number';
+          const bHasCount = typeof b.count === 'number';
+          if (aHasCount !== bHasCount) {
+            return aHasCount ? -1 : 1;
+          }
+          if (a.top !== b.top) {
+            return a.top - b.top;
+          }
+          return a.left - b.left;
+        });
+
+      const best = candidates[0];
+      const button = best?.button;
 
       if (!button) {
         return { found: false };
