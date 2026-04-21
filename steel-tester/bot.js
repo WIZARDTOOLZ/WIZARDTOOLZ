@@ -13569,9 +13569,33 @@ async function runJob(userId, user, onProgress) {
         ...env,
       },
       shell: true,
+      detached: process.platform !== 'win32',
       windowsHide: true,
     });
-    activeRunnerJobs.set(userId, child);
+    const stopJob = () => {
+      try {
+        if (process.platform === 'win32') {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            shell: false,
+            windowsHide: true,
+          });
+          return;
+        }
+
+        process.kill(-child.pid, 'SIGTERM');
+        setTimeout(() => {
+          try {
+            process.kill(-child.pid, 'SIGKILL');
+          } catch {}
+        }, 2500);
+      } catch {
+        try {
+          child.kill('SIGTERM');
+        } catch {}
+      }
+    };
+
+    activeRunnerJobs.set(userId, { child, stop: stopJob });
 
     let stdout = '';
     let stderr = '';
@@ -16958,17 +16982,14 @@ bot.callbackQuery('run:confirm', handleRun);
 
 bot.callbackQuery('run:stop', async (ctx) => {
   const userId = String(ctx.from.id);
-  const child = activeRunnerJobs.get(userId);
+  const job = activeRunnerJobs.get(userId);
 
-  if (!child) {
+  if (!job) {
     await ctx.answerCallbackQuery({ text: 'No active run found.' });
     return;
   }
 
-  try {
-    child.kill('SIGTERM');
-  } catch {}
-
+  try { job.stop(); } catch {}
   activeRunnerJobs.delete(userId);
   await ctx.answerCallbackQuery({ text: 'Stopping run...' });
 });
