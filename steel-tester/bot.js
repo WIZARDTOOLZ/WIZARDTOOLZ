@@ -138,6 +138,7 @@ const STAKING_EARLY_WEIGHT_DAYS = 7;
 const STAKING_REWARDS_VAULT_FEE_RESERVE_LAMPORTS = parseSolToLamports('0.001');
 const vanityWalletJobs = new Map();
 const activeRunnerJobs = new Map();
+const activeMenuMessages = new Map();
 
 let paymentPollInFlight = false;
 let solUsdRateCache = null;
@@ -11964,6 +11965,37 @@ async function sendHome(ctx, user) {
   await editOrReplyMedia(ctx, 'home', homeText(user), makeHomeKeyboard(user));
 }
 
+function getActiveMenuKey(ctx) {
+  const chatId = ctx?.chat?.id;
+  const userId = ctx?.from?.id;
+  if (chatId === undefined || userId === undefined) {
+    return null;
+  }
+  return `${chatId}:${userId}`;
+}
+
+function rememberActiveMenuMessage(ctx, messageId) {
+  const key = getActiveMenuKey(ctx);
+  if (!key || !Number.isInteger(messageId)) {
+    return;
+  }
+  activeMenuMessages.set(key, messageId);
+}
+
+function getRememberedActiveMenuMessageId(ctx) {
+  const key = getActiveMenuKey(ctx);
+  if (!key) {
+    return null;
+  }
+  return activeMenuMessages.get(key) ?? null;
+}
+
+function getCurrentEditableMessageId(ctx) {
+  return ctx?.callbackQuery?.message?.message_id
+    ?? ctx?.msg?.message_id
+    ?? null;
+}
+
 async function handleSlashRoute(ctx, route, { refreshTrading = false } = {}) {
   const userId = String(ctx.from.id);
   const user = refreshTrading
@@ -11973,22 +12005,41 @@ async function handleSlashRoute(ctx, route, { refreshTrading = false } = {}) {
 }
 
 async function editOrReply(ctx, text, keyboard) {
+  const currentMessageId = getCurrentEditableMessageId(ctx);
+  const rememberedMessageId = getRememberedActiveMenuMessageId(ctx);
+
   try {
     await ctx.editMessageText(text, {
       parse_mode: 'Markdown',
       reply_markup: keyboard,
     });
+    if (currentMessageId) {
+      rememberActiveMenuMessage(ctx, currentMessageId);
+    }
   } catch (error) {
+    if (rememberedMessageId && rememberedMessageId !== currentMessageId && ctx.chat?.id !== undefined) {
+      try {
+        await ctx.api.editMessageText(ctx.chat.id, rememberedMessageId, text, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+        rememberActiveMenuMessage(ctx, rememberedMessageId);
+        return;
+      } catch {}
+    }
+
     try {
-      await ctx.reply(text, {
+      const sent = await ctx.reply(text, {
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
+      rememberActiveMenuMessage(ctx, sent.message_id);
     } catch (replyError) {
       if (isCantParseEntitiesError(error) || isCantParseEntitiesError(replyError)) {
-        await ctx.reply(text, {
+        const sent = await ctx.reply(text, {
           reply_markup: keyboard,
         });
+        rememberActiveMenuMessage(ctx, sent.message_id);
         return;
       }
       throw replyError;
@@ -11998,6 +12049,8 @@ async function editOrReply(ctx, text, keyboard) {
 
 async function editOrReplyMedia(ctx, route, text, keyboard) {
   const mediaPath = getScreenMediaPath(route);
+  const currentMessageId = getCurrentEditableMessageId(ctx);
+  const rememberedMessageId = getRememberedActiveMenuMessageId(ctx);
 
   try {
     await ctx.editMessageMedia(
@@ -12009,30 +12062,59 @@ async function editOrReplyMedia(ctx, route, text, keyboard) {
         reply_markup: keyboard,
       },
     );
+    if (currentMessageId) {
+      rememberActiveMenuMessage(ctx, currentMessageId);
+    }
     return;
   } catch (error) {
     if (isMessageNotModifiedError(error)) {
+      if (currentMessageId) {
+        rememberActiveMenuMessage(ctx, currentMessageId);
+      }
       return;
     }
 
+    if (rememberedMessageId && rememberedMessageId !== currentMessageId && ctx.chat?.id !== undefined) {
+      try {
+        await ctx.api.editMessageMedia(
+          ctx.chat.id,
+          rememberedMessageId,
+          InputMediaBuilder.photo(new InputFile(mediaPath), {
+            caption: text,
+            parse_mode: 'Markdown',
+          }),
+          {
+            reply_markup: keyboard,
+          },
+        );
+        rememberActiveMenuMessage(ctx, rememberedMessageId);
+        return;
+      } catch {}
+    }
+
     try {
-      await ctx.replyWithPhoto(new InputFile(mediaPath), {
+      const sent = await ctx.replyWithPhoto(new InputFile(mediaPath), {
         caption: text,
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
+      rememberActiveMenuMessage(ctx, sent.message_id);
       return;
     } catch (replyError) {
       if (isMessageNotModifiedError(replyError)) {
+        if (rememberedMessageId) {
+          rememberActiveMenuMessage(ctx, rememberedMessageId);
+        }
         return;
       }
 
       if (isCantParseEntitiesError(error) || isCantParseEntitiesError(replyError)) {
         try {
-          await ctx.replyWithPhoto(new InputFile(mediaPath), {
+          const sent = await ctx.replyWithPhoto(new InputFile(mediaPath), {
             caption: text,
             reply_markup: keyboard,
           });
+          rememberActiveMenuMessage(ctx, sent.message_id);
           return;
         } catch {}
       }
