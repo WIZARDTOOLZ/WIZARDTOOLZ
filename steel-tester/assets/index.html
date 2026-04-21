@@ -499,6 +499,8 @@ nav{
   flex:1 1 auto;
   justify-content:center;
   min-width:0;
+  padding-left:0;
+  margin:0;
 }
 .nav-links a{
   font-size:13px;font-weight:500;color:var(--muted);
@@ -521,12 +523,51 @@ nav{
 }
 
 @media(max-width:1180px){
-  .nav-links{display:none;}
-  .nav-ctas .btn-outline{display:none;}
+  .nav-inner{
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:
+      "logo menu"
+      "links links"
+      "ctas ctas";
+    align-items:center;
+  }
+  .nav-logo{grid-area:logo;}
+  .hamburger{
+    display:flex;
+    grid-area:menu;
+    justify-self:end;
+  }
+  .nav-links,
+  .nav-ctas{
+    display:none;
+    width:100%;
+  }
+  .nav-links{
+    grid-area:links;
+    flex-direction:column;
+    align-items:flex-start;
+    justify-content:flex-start;
+    gap:12px;
+    padding:10px 0 4px;
+  }
+  .nav-ctas{
+    grid-area:ctas;
+    flex-direction:column;
+    align-items:stretch;
+    gap:10px;
+    padding:8px 0 12px;
+  }
+  nav.nav-open .nav-links,
+  nav.nav-open .nav-ctas{
+    display:flex;
+  }
+  nav.nav-open .nav-ctas .btn{
+    width:100%;
+    justify-content:center;
+  }
 }
 
 @media(max-width:980px){
-  .nav-ctas .btn-green{display:none;}
   .nav-ctas .btn{padding:10px 14px;font-size:12px;}
 }
 
@@ -541,18 +582,14 @@ nav{
   .nav-inner{gap:10px;}
   .nav-logo{font-size:14px;gap:7px;}
   .nav-logo img{width:28px;height:28px;border-radius:7px;}
-  .nav-ctas{display:none;}
-  .nav-ctas .btn-primary{
-    padding:10px 14px;
-    font-size:12px;
-  }
+  .nav-ctas .btn{padding:10px 14px;font-size:12px;}
 }
 
 @media(max-width:430px){
   .nav-inner{gap:8px;}
   .nav-logo{font-size:13px;gap:6px;}
   .nav-logo img{width:26px;height:26px;border-radius:6px;}
-  .nav-ctas .btn-primary{padding:9px 12px;font-size:11px;}
+  .nav-ctas .btn{padding:9px 12px;font-size:11px;}
 }
 
 /* ============================================================
@@ -2007,6 +2044,24 @@ if (track) {
 const chatToggle = document.getElementById('chatToggle');
 const chatPanel = document.getElementById('chatPanel');
 const chatClose = document.getElementById('chatClose');
+const navElement = document.querySelector('nav');
+const navHamburger = document.querySelector('.hamburger');
+const navDismissLinks = document.querySelectorAll('.nav-links a, .nav-ctas a');
+if (navElement && navHamburger) {
+  navHamburger.addEventListener('click', () => {
+    navElement.classList.toggle('nav-open');
+  });
+  navDismissLinks.forEach((node) => {
+    node.addEventListener('click', () => {
+      navElement.classList.remove('nav-open');
+    });
+  });
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 1180) {
+      navElement.classList.remove('nav-open');
+    }
+  });
+}
 if (chatToggle && chatPanel) {
   chatToggle.addEventListener('click', () => {
     chatPanel.classList.toggle('open');
