@@ -3668,6 +3668,11 @@ function isMessageNotModifiedError(error) {
   return message.toLowerCase().includes('message is not modified');
 }
 
+function isCantParseEntitiesError(error) {
+  const message = String(error?.description || error?.message || error || '');
+  return message.toLowerCase().includes("can't parse entities");
+}
+
 function amountLabel(amount) {
   return amount ? `${amount} apples` : 'Not selected';
 }
@@ -11914,11 +11919,21 @@ async function editOrReply(ctx, text, keyboard) {
       parse_mode: 'Markdown',
       reply_markup: keyboard,
     });
-  } catch {
-    await ctx.reply(text, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
+  } catch (error) {
+    try {
+      await ctx.reply(text, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+    } catch (replyError) {
+      if (isCantParseEntitiesError(error) || isCantParseEntitiesError(replyError)) {
+        await ctx.reply(text, {
+          reply_markup: keyboard,
+        });
+        return;
+      }
+      throw replyError;
+    }
   }
 }
 
@@ -11951,6 +11966,16 @@ async function editOrReplyMedia(ctx, route, text, keyboard) {
     } catch (replyError) {
       if (isMessageNotModifiedError(replyError)) {
         return;
+      }
+
+      if (isCantParseEntitiesError(error) || isCantParseEntitiesError(replyError)) {
+        try {
+          await ctx.replyWithPhoto(new InputFile(mediaPath), {
+            caption: text,
+            reply_markup: keyboard,
+          });
+          return;
+        } catch {}
       }
 
       await editOrReply(ctx, text, keyboard);
