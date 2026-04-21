@@ -2635,7 +2635,7 @@ function createDefaultUserState(userId) {
       button: null,
       amount: null,
       usingFreeTrial: false,
-      target: cfg.defaultTarget,
+      target: null,
     },
     payment: createDefaultPaymentState(),
   };
@@ -3856,6 +3856,10 @@ function readinessLabel(user) {
     return 'Complete setup';
   }
 
+  if (!hasCustomTarget(user)) {
+    return 'Target link required';
+  }
+
   return hasLaunchAccess(user) ? 'Ready to launch' : 'Payment required';
 }
 
@@ -4484,11 +4488,7 @@ function makeBurnAgentEditorKeyboard(user) {
 function makeTargetKeyboard(user) {
   const keyboard = new InlineKeyboard();
 
-  if (
-    user.selection.button ||
-    user.selection.amount ||
-    (user.selection.target && user.selection.target !== cfg.defaultTarget)
-  ) {
+  if (hasCustomTarget(user)) {
     keyboard.text('Ã¢Å“â€¦ Continue', 'target:continue');
     keyboard.row();
   }
@@ -5892,6 +5892,16 @@ function paymentText(user) {
     ].join('\n');
   }
 
+  if (!hasCustomTarget(user)) {
+    return [
+      '\u{1F4B3} *Secure Solana Checkout*',
+      '',
+      selectionSnapshot(user),
+      '',
+      'Add a DexScreener target URL before checkout can continue.',
+    ].join('\n');
+  }
+
   if (user.selection.usingFreeTrial) {
     return [
       'Ã°Å¸Å½Â *Free Trial Checkout*',
@@ -5956,7 +5966,7 @@ function targetText(user) {
 }
 
 function hasCustomTarget(user) {
-  return Boolean(user.selection.target && user.selection.target !== cfg.defaultTarget);
+  return Boolean(user.selection.target);
 }
 
 function startBackRoute(user) {
@@ -6029,7 +6039,7 @@ function helpText() {
     `Ã¢â‚¬Â¢ Free trial is limited to one run per Telegram account at x${cfg.freeTrialAmount}`,
     'Ã¢â‚¬Â¢ Payment is tied to the selected bundle size',
     'Ã¢â‚¬Â¢ A paid quote is consumed after a run, so the next run needs a fresh payment',
-    'Ã¢â‚¬Â¢ You can use the default target or enter a custom URL before paying',
+    'Ã¢â‚¬Â¢ A DexScreener target URL is required before paying or launching',
     'Ã¢â‚¬Â¢ Runner uses Steel proxying and CAPTCHA solving for paid and trial runs',
   ].join('\n');
 }
@@ -6175,7 +6185,7 @@ selectionSnapshot = function selectionSnapshot(user) {
   const lines = [
     `\u{1F39B}\uFE0F Profile: ${buttonDisplay(user.selection.button)}`,
     `\u{1F4E6} Bundle: ${amountLabel(user.selection.amount)}`,
-    `\u{1F3AF} Target: \`${user.selection.target}\``,
+    `\u{1F3AF} Target: ${user.selection.target ? `\`${user.selection.target}\`` : '*Not set*'}`,
   ];
 
   if (user.selection.usingFreeTrial) {
@@ -6372,9 +6382,7 @@ makeTargetKeyboard = function makeTargetKeyboard(user) {
   const keyboard = new InlineKeyboard();
 
   if (
-    user.selection.button ||
-    user.selection.amount ||
-    (user.selection.target && user.selection.target !== cfg.defaultTarget)
+    hasCustomTarget(user)
   ) {
     keyboard.text('\u2705 Continue', 'target:continue');
     keyboard.row();
@@ -6524,13 +6532,13 @@ targetText = function targetText(user) {
   return [
     '\u{1F3AF} *Target Setup*',
     '',
-    'Send the target URL you want this run to hit.',
+    'Send the DexScreener target URL you want this run to hit.',
     '',
     selectionSnapshot(user),
     '',
     user.selection.button || user.selection.amount
-      ? 'Paste the full target URL in your next message, or go back to keep the current target.'
-      : 'Send the full target URL in your next message to begin the Reaction Booster flow.',
+      ? 'Paste the full DexScreener target URL in your next message.'
+      : 'Send the full DexScreener target URL in your next message to begin the Reaction Booster flow.',
   ].join('\n');
 };
 
@@ -12218,7 +12226,7 @@ async function renderScreen(ctx, route, user) {
 function buildRunnerEnv(user) {
   const selection = user.selection;
   return {
-    TARGET_URL: selection.target || cfg.defaultTarget,
+    TARGET_URL: selection.target || '',
     BUTTON: selection.button,
     SESSION_COUNT: String(selection.amount),
     FREE_TRIAL: selection.usingFreeTrial ? '1' : '0',
@@ -13771,6 +13779,12 @@ async function handleRun(ctx) {
     return;
   }
 
+  if (!hasCustomTarget(user)) {
+    await ctx.answerCallbackQuery({ text: 'Add a Dex link first.' });
+    await renderScreen(ctx, 'target', user);
+    return;
+  }
+
   if (!hasLaunchAccess(user)) {
     await ctx.answerCallbackQuery({ text: 'Payment still needs confirmation.' });
     await editOrReply(ctx, paymentText(user), makePaymentKeyboard(user));
@@ -14106,7 +14120,7 @@ bot.callbackQuery('entry:reaction', async (ctx) => {
     draft.selection.button = null;
     draft.selection.amount = null;
     draft.selection.usingFreeTrial = false;
-    draft.selection.target = cfg.defaultTarget;
+    draft.selection.target = null;
     draft.awaitingTargetInput = false;
     draft.payment = createDefaultPaymentState();
     return draft;
@@ -14124,12 +14138,22 @@ bot.callbackQuery('nav:amount', async (ctx) => {
 
 bot.callbackQuery('nav:payment', async (ctx) => {
   const user = await getUserState(String(ctx.from.id));
+  if (!hasCustomTarget(user)) {
+    await ctx.answerCallbackQuery({ text: 'Add a Dex link first.' });
+    await renderScreen(ctx, 'target', user);
+    return;
+  }
   await ctx.answerCallbackQuery();
   await renderScreen(ctx, 'payment', user);
 });
 
 bot.callbackQuery('nav:confirm', async (ctx) => {
   const user = await getUserState(String(ctx.from.id));
+  if (!hasCustomTarget(user)) {
+    await ctx.answerCallbackQuery({ text: 'Add a Dex link first.' });
+    await renderScreen(ctx, 'target', user);
+    return;
+  }
   await ctx.answerCallbackQuery();
   await renderScreen(ctx, hasLaunchAccess(user) ? 'confirm' : 'payment', user);
 });
@@ -16903,7 +16927,6 @@ bot.callbackQuery('trial:start', async (ctx) => {
   const updated = await updateUserState(userId, (draft) => {
     draft.selection.amount = cfg.freeTrialAmount;
     draft.selection.usingFreeTrial = true;
-    draft.selection.target = draft.selection.target || cfg.defaultTarget;
     draft.awaitingTargetInput = false;
     draft.payment = createDefaultPaymentState();
     return draft;
@@ -16922,7 +16945,6 @@ bot.callbackQuery(/^button:(.+)$/, async (ctx) => {
 
   const updated = await updateUserState(String(ctx.from.id), (draft) => {
     draft.selection.button = buttonKey;
-    draft.selection.target = draft.selection.target || cfg.defaultTarget;
     draft.awaitingTargetInput = false;
     return draft;
   });
@@ -16952,7 +16974,6 @@ bot.callbackQuery(/^amount:(\d+):(trial|paid)$/, async (ctx) => {
   await updateUserState(userId, (draft) => {
     draft.selection.amount = amount;
     draft.selection.usingFreeTrial = kind === 'trial';
-    draft.selection.target = draft.selection.target || cfg.defaultTarget;
     draft.awaitingTargetInput = false;
     draft.payment = createDefaultPaymentState();
     return draft;
