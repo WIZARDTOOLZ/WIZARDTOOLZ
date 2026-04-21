@@ -873,11 +873,28 @@ async function runSingleSession(index, cfg, steel) {
 
     const initialDomState = await getReactionDomState(page, cfg.buttonKey);
     const siteKey = await getReactionSiteKey(page);
+    let proactiveToken = null;
     log(`Session ${index + 1}: reaction baseline`, {
       dom: initialDomState,
       siteKeyPresent: Boolean(siteKey),
       pairIdentity: cfg.pairIdentity,
     });
+
+    if (siteKey) {
+      try {
+        const tokenResult = await obtainTurnstileToken(page, siteKey, Math.min(cfg.turnstileWaitMs, 20000));
+        proactiveToken = tokenResult?.token ?? null;
+        result.turnstileDetected = true;
+        result.turnstileTokenLength = proactiveToken ? proactiveToken.length : null;
+        log(`Session ${index + 1}: proactive Turnstile token acquired`, {
+          tokenLength: result.turnstileTokenLength,
+        });
+      } catch (tokenError) {
+        log(`Session ${index + 1}: proactive Turnstile token failed`, {
+          error: tokenError.message,
+        });
+      }
+    }
 
     let rescuedByBeacon = false;
     let rescueTokenLength = null;
@@ -933,6 +950,16 @@ async function runSingleSession(index, cfg, steel) {
       ...buttonMatch,
       clickGeometry,
     });
+
+    if (proactiveToken && result.submissionAttempts.length === 0) {
+      const proactiveRescue = await attemptReactionRescueSubmissions(page, cfg, proactiveToken);
+      result.submissionAttempts.push(...proactiveRescue.attempts);
+      rescueAcceptedTransport = proactiveRescue.acceptedTransport ?? rescueAcceptedTransport;
+      if (proactiveRescue.acceptedTransport) {
+        result.submissionTransport = `${proactiveRescue.acceptedTransport}-proactive`;
+      }
+      log(`Session ${index + 1}: proactive submit attempts completed`, proactiveRescue);
+    }
 
     await sleep(cfg.postClickSettleMs);
     const postClickStart = Date.now();
