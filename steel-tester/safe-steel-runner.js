@@ -137,6 +137,9 @@ function getConfig() {
     sessionLaunchDelayMs: Number.parseInt(process.env.SESSION_LAUNCH_DELAY || '1000', 10),
     saveSuccessScreenshot: process.env.SAVE_SUCCESS_SCREENSHOT === '1',
     turnstileWaitMs: Number.parseInt(process.env.TURNSTILE_WAIT_MS || '45000', 10),
+    captchaSolveMs: Number.parseInt(process.env.CAPTCHA_SOLVE_MS || '90000', 10),
+    captchaPollMs: Number.parseInt(process.env.CAPTCHA_POLL_MS || '3000', 10),
+    postSolveSettleMs: Number.parseInt(process.env.POST_SOLVE_SETTLE_MS || '3000', 10),
     verifyPollMs: Number.parseInt(process.env.REACTION_VERIFY_POLL_MS || '1250', 10),
     uiFallbackWaitMs: Number.parseInt(process.env.UI_FALLBACK_WAIT_MS || '45000', 10),
     maxSessionAttempts: Number.parseInt(
@@ -191,6 +194,43 @@ async function waitForTurnstile(page, timeoutMs) {
     await sleep(500);
   }
   return false;
+}
+
+async function waitForCaptchaSolve(steel, sessionId, sessionIndex, cfg) {
+  const deadline = Date.now() + cfg.captchaSolveMs;
+
+  while (Date.now() < deadline) {
+    await sleep(cfg.captchaPollMs);
+
+    let status;
+    try {
+      status = await steel.sessions.getSessionCaptchaStatus(sessionId);
+    } catch (error) {
+      log(`Session ${sessionIndex + 1}: captcha poll failed, retrying`, {
+        error: error.message,
+      });
+      continue;
+    }
+
+    const pages = status?.pages ?? [];
+    if (pages.length === 0) {
+      return { solved: true, status: 'auto_resolved' };
+    }
+
+    for (const pageStatus of pages) {
+      for (const task of pageStatus?.captchaTasks ?? []) {
+        if (task.status === 'solved') {
+          return { solved: true, status: 'solved', detail: task };
+        }
+
+        if (task.status === 'failed' || task.status === 'error') {
+          return { solved: false, status: task.status, detail: task };
+        }
+      }
+    }
+  }
+
+  return { solved: false, status: 'timeout' };
 }
 
 async function waitForDexPageReady(page, timeoutMs) {
@@ -872,67 +912,9 @@ async function runSingleSession(index, cfg, steel) {
     log(`Session ${index + 1}: reaction row ready`, reactionRowState);
 
     const initialDomState = await getReactionDomState(page, cfg.buttonKey);
-    const siteKey = await getReactionSiteKey(page);
-    let proactiveToken = null;
     log(`Session ${index + 1}: reaction baseline`, {
       dom: initialDomState,
-      siteKeyPresent: Boolean(siteKey),
       pairIdentity: cfg.pairIdentity,
-    });
-
-    if (siteKey) {
-      try {
-        const tokenResult = await obtainTurnstileToken(page, siteKey, Math.min(cfg.turnstileWaitMs, 20000));
-        proactiveToken = tokenResult?.token ?? null;
-        result.turnstileDetected = true;
-        result.turnstileTokenLength = proactiveToken ? proactiveToken.length : null;
-        log(`Session ${index + 1}: proactive Turnstile token acquired`, {
-          tokenLength: result.turnstileTokenLength,
-        });
-      } catch (tokenError) {
-        log(`Session ${index + 1}: proactive Turnstile token failed`, {
-          error: tokenError.message,
-        });
-      }
-    }
-
-    let rescuedByBeacon = false;
-    let rescueTokenLength = null;
-    let rescueAcceptedTransport = null;
-    let resolveRescueEvent = null;
-    const rescueEventPromise = new Promise((resolve) => {
-      resolveRescueEvent = resolve;
-    });
-    page.on('requestfailed', async (request) => {
-      try {
-        if (!request.url().includes(REACTION_ENDPOINT_FRAGMENT) || rescuedByBeacon) {
-          return;
-        }
-
-        const token = new URL(request.url()).searchParams.get('captchaValue');
-        if (!token) {
-          return;
-        }
-
-        rescuedByBeacon = true;
-        rescueTokenLength = token.length;
-        log(`Session ${index + 1}: reaction POST failed, attempting beacon rescue`, {
-          error: request.failure()?.errorText ?? 'unknown',
-          tokenLength: rescueTokenLength,
-        });
-
-        const rescue = await attemptReactionRescueSubmissions(page, cfg, token);
-        result.submissionAttempts.push(...rescue.attempts);
-        rescueAcceptedTransport = rescue.acceptedTransport;
-        result.submissionTransport = rescue.acceptedTransport
-          ? `${rescue.acceptedTransport}-rescue`
-          : 'rescue-failed';
-        log(`Session ${index + 1}: rescue attempts completed`, rescue);
-        resolveRescueEvent?.();
-      } catch (error) {
-        log(`Session ${index + 1}: beacon rescue failed`, { error: error.message });
-        resolveRescueEvent?.();
-      }
     });
 
     const buttonMatch = await markReactionButton(page, cfg.buttonKey);
@@ -951,81 +933,39 @@ async function runSingleSession(index, cfg, steel) {
       clickGeometry,
     });
 
-    if (proactiveToken && result.submissionAttempts.length === 0) {
-      const proactiveRescue = await attemptReactionRescueSubmissions(page, cfg, proactiveToken);
-      result.submissionAttempts.push(...proactiveRescue.attempts);
-      rescueAcceptedTransport = proactiveRescue.acceptedTransport ?? rescueAcceptedTransport;
-      if (proactiveRescue.acceptedTransport) {
-        result.submissionTransport = `${proactiveRescue.acceptedTransport}-proactive`;
-      }
-      log(`Session ${index + 1}: proactive submit attempts completed`, proactiveRescue);
-    }
-
     await sleep(cfg.postClickSettleMs);
     const postClickStart = Date.now();
     let raceOutcome;
-    try {
-      raceOutcome = await Promise.any([
-        confirmationPromise,
-        verificationPromise,
-      ]);
-    } catch (error) {
-      await Promise.race([
-        rescueEventPromise,
-        sleep(8000),
-      ]);
+    const turnstileDetected = await waitForTurnstile(page, Math.min(cfg.turnstileWaitMs, 12000));
+    if (turnstileDetected) {
+      result.turnstileDetected = true;
+      log(`Session ${index + 1}: Turnstile detected, waiting for Steel solve`);
 
-      const rescueWasAccepted = result.submissionAttempts.some((attempt) => attempt?.ok);
-      if (rescueWasAccepted || rescueAcceptedTransport || siteKey) {
-        log(`Session ${index + 1}: primary confirmation race failed, retrying extended verification`, {
-          rescueAcceptedTransport,
-          submissionAttempts: result.submissionAttempts,
+      const solveResult = await waitForCaptchaSolve(steel, session.id, index, cfg);
+      log(`Session ${index + 1}: captcha solve result`, solveResult);
+
+      if (!solveResult.solved) {
+        throw new Error(`Steel captcha solve failed: ${solveResult.status}`);
+      }
+
+      await sleep(cfg.postSolveSettleMs);
+      const reclickBaseline = await getReactionDomState(page, cfg.buttonKey);
+      log(`Session ${index + 1}: retrying reaction after Steel solve`, {
+        dom: reclickBaseline,
+      });
+      raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
+    } else {
+      try {
+        raceOutcome = await Promise.any([
+          confirmationPromise,
+          verificationPromise,
+        ]);
+      } catch (error) {
+        log(`Session ${index + 1}: initial confirmation missed, retrying native click`, {
           error: error?.message || String(error),
         });
-
-        if (!rescueWasAccepted && siteKey) {
-          try {
-            const tokenResult = await obtainTurnstileToken(page, siteKey, cfg.turnstileWaitMs);
-            result.turnstileDetected = true;
-            result.turnstileTokenLength = tokenResult?.token?.length ?? null;
-            const rescue = await attemptReactionRescueSubmissions(page, cfg, tokenResult.token);
-            result.submissionAttempts.push(...rescue.attempts);
-            rescueAcceptedTransport = rescue.acceptedTransport ?? rescueAcceptedTransport;
-            if (rescue.acceptedTransport) {
-              result.submissionTransport = `${rescue.acceptedTransport}-manual-rescue`;
-            }
-            log(`Session ${index + 1}: manual Turnstile rescue completed`, rescue);
-          } catch (manualRescueError) {
-            log(`Session ${index + 1}: manual Turnstile rescue failed`, {
-              error: manualRescueError.message,
-            });
-          }
-        }
-
-        try {
-          const reclickBaseline = await getReactionDomState(page, cfg.buttonKey);
-          log(`Session ${index + 1}: retrying native UI click after challenge/rescue`, {
-            dom: reclickBaseline,
-            rescueAcceptedTransport,
-          });
-          raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
-        } catch (reclickError) {
-          log(`Session ${index + 1}: native UI reclick failed, falling back to extended verification`, {
-            error: reclickError.message,
-          });
-        }
-
-        if (!raceOutcome) {
-          const verified = await waitForVerifiedReaction(
-            page,
-            cfg,
-            initialDomState,
-            Math.max(cfg.uiFallbackWaitMs, 45000) + 45000,
-          );
-          raceOutcome = { source: 'verification', value: verified };
-        }
-      } else {
-        throw error;
+        const reclickBaseline = await getReactionDomState(page, cfg.buttonKey);
+        raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
       }
     }
     result.timingsMs.postClickToConfirm = elapsedMs(postClickStart);
@@ -1036,15 +976,11 @@ async function runSingleSession(index, cfg, steel) {
       result.confirmedReaction = confirmation.confirmedReaction;
       result.reactionTotals = confirmation.totals;
       result.reactionResponseUrl = confirmation.responseUrl;
-      result.reactionVerificationSource = rescuedByBeacon ? 'ui-response-after-rescue' : 'ui-response';
-      if (rescueTokenLength) {
-        result.turnstileDetected = true;
-        result.turnstileTokenLength = rescueTokenLength;
-      }
+      result.reactionVerificationSource = result.turnstileDetected ? 'ui-response-after-steel-solve' : 'ui-response';
       log(`Session ${index + 1}: reaction confirmed`, {
         reaction: confirmation.confirmedReaction,
         totals: confirmation.totals,
-        rescuedByBeacon,
+        turnstileDetected: result.turnstileDetected,
       });
     } else if (raceOutcome.source === 'verification') {
       const verified = raceOutcome.value;
@@ -1054,18 +990,11 @@ async function runSingleSession(index, cfg, steel) {
       result.reactionTotals = verified.apiState?.payload?.reactions ?? null;
       result.reactionResponseUrl = verified.apiState?.url ?? null;
       result.reactionVerificationSource = verified.verificationSource;
-      result.submissionTransport = rescueAcceptedTransport
-        ? `${rescueAcceptedTransport}-rescue`
-        : (rescuedByBeacon ? 'beacon-rescue' : result.submissionTransport);
-      if (rescueTokenLength) {
-        result.turnstileDetected = true;
-        result.turnstileTokenLength = rescueTokenLength;
-      }
       log(`Session ${index + 1}: reaction verified after delayed state sync`, {
         source: verified.verificationSource,
         reaction: result.confirmedReaction,
         totals: result.reactionTotals,
-        rescuedByBeacon,
+        turnstileDetected: result.turnstileDetected,
       });
     }
 
