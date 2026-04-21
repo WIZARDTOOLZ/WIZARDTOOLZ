@@ -139,6 +139,10 @@ function getConfig() {
     turnstileWaitMs: Number.parseInt(process.env.TURNSTILE_WAIT_MS || '45000', 10),
     verifyPollMs: Number.parseInt(process.env.REACTION_VERIFY_POLL_MS || '1250', 10),
     uiFallbackWaitMs: Number.parseInt(process.env.UI_FALLBACK_WAIT_MS || '45000', 10),
+    maxSessionAttempts: Number.parseInt(
+      process.env.MAX_SESSION_ATTEMPTS || String(Math.max(sessionCount * 3, sessionCount + 10)),
+      10,
+    ),
   };
 }
 
@@ -1033,6 +1037,7 @@ function printSummary(cfg, results) {
   const challenged = results.filter((result) => result.turnstileDetected).length;
   const failed = results.filter((result) => result.error).length;
   const blocked = results.filter((result) => result.blockedSignal).length;
+  const confirmed = results.filter((result) => result.reactionConfirmed).length;
 
   console.log('');
   console.log('='.repeat(72));
@@ -1040,7 +1045,10 @@ function printSummary(cfg, results) {
   console.log('='.repeat(72));
   console.log(`Target:   ${cfg.targetUrl}`);
   console.log(`Button:   ${cfg.button.emoji} ${cfg.button.label}`);
-  console.log(`Sessions: ${cfg.sessionCount}`);
+  console.log(`Requested confirmations: ${cfg.sessionCount}`);
+  console.log(`Confirmed: ${confirmed}`);
+  console.log(`Attempts used: ${results.length}`);
+  console.log(`Attempt cap: ${cfg.maxSessionAttempts}`);
   console.log(`Errors:   ${failed}`);
   console.log(`Challenges detected: ${challenged}`);
   console.log(`Blocked signals:     ${blocked}`);
@@ -1092,19 +1100,48 @@ async function main() {
     target: cfg.targetUrl,
     button: cfg.buttonKey,
     sessions: cfg.sessionCount,
+    maxAttempts: cfg.maxSessionAttempts,
     solveCaptcha: true,
     useProxy: true,
   });
 
-  for (let index = 0; index < cfg.sessionCount; index += 1) {
-    if (index > 0) {
+  let confirmedCount = 0;
+  let attemptIndex = 0;
+
+  while (confirmedCount < cfg.sessionCount && attemptIndex < cfg.maxSessionAttempts) {
+    const remaining = cfg.sessionCount - confirmedCount;
+    log('Reaction progress', {
+      confirmed: confirmedCount,
+      requested: cfg.sessionCount,
+      remaining,
+      nextAttempt: attemptIndex + 1,
+      maxAttempts: cfg.maxSessionAttempts,
+    });
+
+    if (attemptIndex > 0) {
       await sleep(cfg.sessionLaunchDelayMs);
     }
-    results.push(await runSingleSession(index, cfg, steel));
+
+    const result = await runSingleSession(attemptIndex, cfg, steel);
+    results.push(result);
+    if (result.reactionConfirmed) {
+      confirmedCount += 1;
+    }
+
+    attemptIndex += 1;
+  }
+
+  if (confirmedCount < cfg.sessionCount) {
+    log('Reaction target not fully met before attempt cap', {
+      confirmed: confirmedCount,
+      requested: cfg.sessionCount,
+      attemptsUsed: results.length,
+      maxAttempts: cfg.maxSessionAttempts,
+    });
   }
 
   printSummary(cfg, results);
-  process.exitCode = results.some((result) => result.error) ? 1 : 0;
+  process.exitCode = confirmedCount >= cfg.sessionCount ? 0 : 1;
 }
 
 main().catch((error) => {
