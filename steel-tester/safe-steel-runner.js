@@ -793,6 +793,39 @@ async function getReactionSiteKey(page) {
   });
 }
 
+async function getSolvedTurnstileToken(page) {
+  return page.evaluate(() => {
+    const selectors = [
+      'input[name="cf-turnstile-response"]',
+      'textarea[name="cf-turnstile-response"]',
+      'input[name="g-recaptcha-response"]',
+      'textarea[name="g-recaptcha-response"]',
+      'input[data-cf-response]',
+      'textarea[data-cf-response]',
+    ];
+
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      const value = node?.value || node?.textContent || '';
+      if (typeof value === 'string' && value.trim().length > 20) {
+        return value.trim();
+      }
+    }
+
+    const explicitNodes = Array.from(document.querySelectorAll('input, textarea'));
+    for (const node of explicitNodes) {
+      const name = (node.getAttribute('name') || '').toLowerCase();
+      const id = (node.getAttribute('id') || '').toLowerCase();
+      const value = node.value || node.textContent || '';
+      if ((name.includes('turnstile') || id.includes('turnstile')) && typeof value === 'string' && value.trim().length > 20) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  });
+}
+
 async function obtainTurnstileToken(page, siteKey, timeoutMs) {
   if (!siteKey) {
     throw new Error('Dex Turnstile reactions site key was not available on the page.');
@@ -1255,15 +1288,48 @@ async function runSingleSession(index, cfg, steel) {
         await sleep(Math.max(cfg.postSolveSettleMs, 6000));
       }
 
+      const solvedToken = await getSolvedTurnstileToken(page).catch(() => null);
+      if (solvedToken) {
+        result.turnstileTokenLength = solvedToken.length;
+        log(`Session ${index + 1}: solved Turnstile token found on page`, {
+          tokenLength: solvedToken.length,
+        });
+
+        const rescued = await attemptReactionRescueSubmissions(page, cfg, solvedToken);
+        result.submissionAttempts = rescued.attempts;
+        result.submissionTransport = rescued.acceptedTransport;
+
+        if (rescued.accepted) {
+          log(`Session ${index + 1}: post-solve direct submit accepted`, {
+            acceptedTransport: rescued.acceptedTransport,
+          });
+          try {
+            const verified = await waitForVerifiedReaction(
+              page,
+              cfg,
+              initialDomState,
+              Math.max(cfg.uiFallbackWaitMs, 15000),
+            );
+            raceOutcome = { source: 'verification', value: verified };
+          } catch (error) {
+            log(`Session ${index + 1}: post-solve direct submit not verified yet`, {
+              error: error?.message || String(error),
+            });
+          }
+        }
+      }
+
       await sleep(cfg.postSolveSettleMs);
-      raceOutcome = await attemptReactionWithRetries(
-        page,
-        cfg,
-        initialDomState,
-        index,
-        'post-solve reaction retry',
-        3,
-      );
+      if (!raceOutcome) {
+        raceOutcome = await attemptReactionWithRetries(
+          page,
+          cfg,
+          initialDomState,
+          index,
+          'post-solve reaction retry',
+          3,
+        );
+      }
     } else {
       try {
         const confirmationPromise = waitForReactionConfirmation(page, cfg.reactionKey, cfg.uiFallbackWaitMs)
