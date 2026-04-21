@@ -780,6 +780,27 @@ async function waitForReactionConfirmation(page, reactionKey, timeoutMs) {
   };
 }
 
+async function attemptNativeUiRecClick(page, cfg, baselineDomState) {
+  const confirmationPromise = waitForReactionConfirmation(
+    page,
+    cfg.reactionKey,
+    Math.max(cfg.uiFallbackWaitMs, 45000),
+  ).then((value) => ({ source: 'response', value }));
+
+  const verificationPromise = waitForVerifiedReaction(
+    page,
+    cfg,
+    baselineDomState,
+    Math.max(cfg.uiFallbackWaitMs, 45000),
+  ).then((value) => ({ source: 'verification', value }));
+
+  await markReactionButton(page, cfg.buttonKey);
+  await clickMarkedReactionButton(page, cfg.buttonKey);
+  await sleep(Math.max(cfg.postClickSettleMs, 500));
+
+  return Promise.any([confirmationPromise, verificationPromise]);
+}
+
 async function runSingleSession(index, cfg, steel) {
   const sessionStart = Date.now();
   const result = {
@@ -943,13 +964,28 @@ async function runSingleSession(index, cfg, steel) {
           }
         }
 
-        const verified = await waitForVerifiedReaction(
-          page,
-          cfg,
-          initialDomState,
-          Math.max(cfg.uiFallbackWaitMs, 45000) + 45000,
-        );
-        raceOutcome = { source: 'verification', value: verified };
+        try {
+          const reclickBaseline = await getReactionDomState(page, cfg.buttonKey);
+          log(`Session ${index + 1}: retrying native UI click after challenge/rescue`, {
+            dom: reclickBaseline,
+            rescueAcceptedTransport,
+          });
+          raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
+        } catch (reclickError) {
+          log(`Session ${index + 1}: native UI reclick failed, falling back to extended verification`, {
+            error: reclickError.message,
+          });
+        }
+
+        if (!raceOutcome) {
+          const verified = await waitForVerifiedReaction(
+            page,
+            cfg,
+            initialDomState,
+            Math.max(cfg.uiFallbackWaitMs, 45000) + 45000,
+          );
+          raceOutcome = { source: 'verification', value: verified };
+        }
       } else {
         throw error;
       }
