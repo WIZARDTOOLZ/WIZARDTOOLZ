@@ -675,6 +675,29 @@ async function submitReactionTransport(page, cfg, token, transport) {
   );
 }
 
+async function attemptReactionRescueSubmissions(page, cfg, token) {
+  const transports = ['json-fetch', 'text-fetch', 'beacon'];
+  const attempts = [];
+
+  for (const transport of transports) {
+    const submission = await submitReactionTransport(page, cfg, token, transport);
+    attempts.push(submission);
+    if (submission?.ok) {
+      return {
+        attempts,
+        accepted: true,
+        acceptedTransport: transport,
+      };
+    }
+  }
+
+  return {
+    attempts,
+    accepted: false,
+    acceptedTransport: null,
+  };
+}
+
 async function waitForVerifiedReaction(page, cfg, initialDomState, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let lastApiState = null;
@@ -833,6 +856,7 @@ async function runSingleSession(index, cfg, steel) {
 
     let rescuedByBeacon = false;
     let rescueTokenLength = null;
+    let rescueAcceptedTransport = null;
     page.on('requestfailed', async (request) => {
       try {
         if (!request.url().includes(REACTION_ENDPOINT_FRAGMENT) || rescuedByBeacon) {
@@ -851,10 +875,13 @@ async function runSingleSession(index, cfg, steel) {
           tokenLength: rescueTokenLength,
         });
 
-        const submission = await submitReactionTransport(page, cfg, token, 'beacon');
-        result.submissionAttempts.push(submission);
-        result.submissionTransport = 'beacon-rescue';
-        log(`Session ${index + 1}: beacon rescue attempted`, submission);
+        const rescue = await attemptReactionRescueSubmissions(page, cfg, token);
+        result.submissionAttempts.push(...rescue.attempts);
+        rescueAcceptedTransport = rescue.acceptedTransport;
+        result.submissionTransport = rescue.acceptedTransport
+          ? `${rescue.acceptedTransport}-rescue`
+          : 'rescue-failed';
+        log(`Session ${index + 1}: rescue attempts completed`, rescue);
       } catch (error) {
         log(`Session ${index + 1}: beacon rescue failed`, { error: error.message });
       }
@@ -878,10 +905,51 @@ async function runSingleSession(index, cfg, steel) {
 
     await sleep(cfg.postClickSettleMs);
     const postClickStart = Date.now();
-    const raceOutcome = await Promise.any([
-      confirmationPromise,
-      verificationPromise,
-    ]);
+    let raceOutcome;
+    try {
+      raceOutcome = await Promise.any([
+        confirmationPromise,
+        verificationPromise,
+      ]);
+    } catch (error) {
+      const rescueWasAccepted = result.submissionAttempts.some((attempt) => attempt?.ok);
+      if (rescueWasAccepted || rescueAcceptedTransport || siteKey) {
+        log(`Session ${index + 1}: primary confirmation race failed, retrying extended verification`, {
+          rescueAcceptedTransport,
+          submissionAttempts: result.submissionAttempts,
+          error: error?.message || String(error),
+        });
+
+        if (!rescueWasAccepted && siteKey) {
+          try {
+            const tokenResult = await obtainTurnstileToken(page, siteKey, cfg.turnstileWaitMs);
+            result.turnstileDetected = true;
+            result.turnstileTokenLength = tokenResult?.token?.length ?? null;
+            const rescue = await attemptReactionRescueSubmissions(page, cfg, tokenResult.token);
+            result.submissionAttempts.push(...rescue.attempts);
+            rescueAcceptedTransport = rescue.acceptedTransport ?? rescueAcceptedTransport;
+            if (rescue.acceptedTransport) {
+              result.submissionTransport = `${rescue.acceptedTransport}-manual-rescue`;
+            }
+            log(`Session ${index + 1}: manual Turnstile rescue completed`, rescue);
+          } catch (manualRescueError) {
+            log(`Session ${index + 1}: manual Turnstile rescue failed`, {
+              error: manualRescueError.message,
+            });
+          }
+        }
+
+        const verified = await waitForVerifiedReaction(
+          page,
+          cfg,
+          initialDomState,
+          Math.max(cfg.uiFallbackWaitMs, 45000) + 45000,
+        );
+        raceOutcome = { source: 'verification', value: verified };
+      } else {
+        throw error;
+      }
+    }
     result.timingsMs.postClickToConfirm = elapsedMs(postClickStart);
 
     if (raceOutcome.source === 'response') {
@@ -908,7 +976,9 @@ async function runSingleSession(index, cfg, steel) {
       result.reactionTotals = verified.apiState?.payload?.reactions ?? null;
       result.reactionResponseUrl = verified.apiState?.url ?? null;
       result.reactionVerificationSource = verified.verificationSource;
-      result.submissionTransport = rescuedByBeacon ? 'beacon-rescue' : result.submissionTransport;
+      result.submissionTransport = rescueAcceptedTransport
+        ? `${rescueAcceptedTransport}-rescue`
+        : (rescuedByBeacon ? 'beacon-rescue' : result.submissionTransport);
       if (rescueTokenLength) {
         result.turnstileDetected = true;
         result.turnstileTokenLength = rescueTokenLength;
