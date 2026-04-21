@@ -13628,10 +13628,17 @@ async function runJob(userId, user, onProgress) {
     const stopJob = () => {
       try {
         if (process.platform === 'win32') {
-          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-            shell: false,
-            windowsHide: true,
-          });
+          try {
+            child.kill('SIGTERM');
+          } catch {}
+          setTimeout(() => {
+            try {
+              spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+                shell: false,
+                windowsHide: true,
+              });
+            } catch {}
+          }, 12000);
           return;
         }
 
@@ -13640,11 +13647,21 @@ async function runJob(userId, user, onProgress) {
           try {
             process.kill(-child.pid, 'SIGKILL');
           } catch {}
-        }, 2500);
+        }, 12000);
       } catch {
         try {
           child.kill('SIGTERM');
-        } catch {}
+          setTimeout(() => {
+            try {
+              child.kill('SIGKILL');
+            } catch {}
+          }, 12000);
+        } catch {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            shell: false,
+            windowsHide: true,
+          });
+        }
       }
     };
 

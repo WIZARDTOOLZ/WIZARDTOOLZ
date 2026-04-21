@@ -45,6 +45,24 @@ const BUTTONS = {
 const PROTECTED_PAIR_REACTION_RULES = {
   bb21ye7jegbrag3menv7mahhasor52wneufquumohxve: new Set(['rocket', 'fire']),
 };
+let stopRequested = false;
+let stopSignal = null;
+
+class RunnerStopError extends Error {
+  constructor(message = 'Runner stop requested.') {
+    super(message);
+    this.name = 'RunnerStopError';
+  }
+}
+
+function requestStop(signal) {
+  stopRequested = true;
+  stopSignal = signal;
+  log('Stop requested', { signal });
+}
+
+process.on('SIGINT', () => requestStop('SIGINT'));
+process.on('SIGTERM', () => requestStop('SIGTERM'));
 
 function parsePairIdentity(targetUrl) {
   const url = new URL(targetUrl);
@@ -167,8 +185,20 @@ function log(message, data = null) {
   console.log(`${prefix} ${message}`);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function assertNotStopped() {
+  if (stopRequested) {
+    throw new RunnerStopError(`Runner stopped by ${stopSignal || 'signal'}.`);
+  }
+}
+
+async function sleep(ms) {
+  const deadline = Date.now() + Math.max(ms, 0);
+  while (Date.now() < deadline) {
+    assertNotStopped();
+    const remaining = deadline - Date.now();
+    await new Promise((resolve) => setTimeout(resolve, Math.min(remaining, 250)));
+  }
+  assertNotStopped();
 }
 
 function elapsedMs(startTime) {
@@ -1238,6 +1268,7 @@ async function attemptReactionWithRetries(page, cfg, initialBaseline, sessionInd
 }
 
 async function runSingleSession(index, cfg, steel) {
+  assertNotStopped();
   const sessionStart = Date.now();
   const result = {
     index,
@@ -1274,6 +1305,7 @@ async function runSingleSession(index, cfg, steel) {
   let browser;
 
   try {
+    assertNotStopped();
     log(`Session ${index + 1}/${cfg.sessionCount}: creating Steel session`);
     session = await steel.sessions.create({
       solveCaptcha: true,
@@ -1593,6 +1625,7 @@ async function main() {
   let highestObservedReactionCount = null;
 
   while (confirmedCount < cfg.sessionCount && attemptIndex < cfg.maxSessionAttempts) {
+    assertNotStopped();
     const remaining = cfg.sessionCount - confirmedCount;
     log('Reaction progress', {
       confirmed: confirmedCount,
@@ -1641,6 +1674,14 @@ async function main() {
     attemptIndex += 1;
   }
 
+  if (stopRequested) {
+    log('Runner stopped before finishing requested reactions', {
+      confirmed: confirmedCount,
+      requested: cfg.sessionCount,
+      attemptsUsed: results.length,
+    });
+  }
+
   if (confirmedCount < cfg.sessionCount) {
     log('Reaction target not fully met before attempt cap', {
       confirmed: confirmedCount,
@@ -1655,6 +1696,10 @@ async function main() {
 }
 
 main().catch((error) => {
+  if (error instanceof RunnerStopError) {
+    console.log(`Stopped: ${error.message}`);
+    process.exit(0);
+  }
   console.error(`Fatal: ${error.message}`);
   process.exit(1);
 });
