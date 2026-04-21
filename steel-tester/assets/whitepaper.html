@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WIZARD TOOLZ | Whitepaper</title>
+<meta name="description" content="The WIZARD TOOLZ whitepaper: product vision, trading stack, launch tools, token model, rewards vault flow, and roadmap.">
+<meta name="robots" content="index,follow">
+<meta name="theme-color" content="#050507">
+<link rel="canonical" href="https://wizardtoolz.trade/whitepaper.html">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="apple-touch-icon" href="favicon-512.png">
+<link rel="manifest" href="site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WIZARD TOOLZ">
+<meta property="og:title" content="WIZARD TOOLZ | Whitepaper">
+<meta property="og:description" content="Product vision, token model, rewards vault flow, roadmap, and how WIZARD TOOLZ fits together.">
+<meta property="og:url" content="https://wizardtoolz.trade/whitepaper.html">
+<meta property="og:image" content="https://wizardtoolz.trade/wizard-toolz-share.png">
+<meta property="og:image:alt" content="WIZARD TOOLZ logo">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="WIZARD TOOLZ | Whitepaper">
+<meta name="twitter:description" content="Product vision, token model, rewards vault flow, roadmap, and how WIZARD TOOLZ fits together.">
+<meta name="twitter:image" content="https://wizardtoolz.trade/wizard-toolz-share.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050505;
+  --panel:#0d0d12;
+  --panel-2:#111118;
+  --line:#272733;
+  --muted:#b6b6c6;
+  --white:#f5f2eb;
+  --gold:#c8a84b;
+  --gold-soft:rgba(200,168,75,0.12);
+  --max:1180px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:
+    radial-gradient(circle at top left, rgba(200,168,75,0.08), transparent 34%),
+    linear-gradient(180deg, #060606 0%, #09090d 100%);
+  color:var(--white);
+  font-family:'DM Sans',sans-serif;
+}
+a{color:inherit;text-decoration:none}
+.container{width:min(calc(100% - 32px),var(--max));margin:0 auto}
+nav{
+  position:sticky;top:0;z-index:40;
+  backdrop-filter:blur(18px);
+  background:rgba(5,5,5,0.84);
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.nav-inner{
+  min-height:78px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+}
+.nav-logo{
+  display:flex;align-items:center;gap:14px;
+  min-width:0;
+}
+.nav-logo img{
+  width:40px;height:40px;border-radius:12px;object-fit:cover;
+  border:1px solid rgba(255,255,255,0.08);
+}
+.nav-logo span{
+  font-family:'Cinzel',serif;
+  font-size:16px;
+  font-weight:700;
+  letter-spacing:.02em;
+}
+.nav-actions{
+  display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;
+}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:44px;padding:0 18px;border-radius:999px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.04);
+  color:var(--white);
+  font-size:14px;font-weight:600;
+}
+.btn-primary{background:var(--white);color:#111}
+.btn-outline:hover,.btn-primary:hover{transform:translateY(-1px)}
+.hero{
+  padding:86px 0 44px;
+}
+.tag{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:10px 16px;border-radius:999px;
+  border:1px solid rgba(200,168,75,0.45);
+  background:var(--gold-soft);
+  color:var(--gold);
+  text-transform:uppercase;
+  font-family:'DM Mono',monospace;
+  font-size:12px;letter-spacing:.08em;
+}
+h1,h2,h3,h4{
+  margin:0 0 14px;
+  font-family:'Cinzel',serif;
+  line-height:1.08;
+}
+h1{font-size:clamp(38px,7vw,74px)}
+h2{font-size:clamp(28px,4.2vw,46px)}
+h3{font-size:24px}
+h4{font-size:18px}
+p{
+  margin:0;
+  color:var(--muted);
+  line-height:1.8;
+  font-size:16px;
+}
+.hero-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.3fr) minmax(280px,.9fr);
+  gap:28px;
+  align-items:start;
+}
+.hero-card,.panel,.section-card{
+  border:1px solid rgba(255,255,255,0.08);
+  background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+  border-radius:28px;
+  box-shadow:0 20px 80px rgba(0,0,0,0.28);
+}
+.hero-card{
+  padding:24px;
+}
+.hero-card img{
+  width:100%;
+  border-radius:20px;
+  display:block;
+}
+.hero-meta{
+  margin-top:20px;
+  display:grid;
+  gap:10px;
+}
+.hero-meta-line{
+  display:flex;justify-content:space-between;gap:18px;
+  padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.hero-meta-line:last-child{border-bottom:none}
+.hero-meta-line span:first-child{color:var(--muted)}
+.hero-meta-line code{
+  font-family:'DM Mono',monospace;
+  font-size:12px;
+  word-break:break-all;
+}
+.section{
+  padding:26px 0;
+}
+.section-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:24px;
+}
+.section-card{
+  padding:24px;
+}
+.section-card p + p{margin-top:14px}
+.lines{
+  list-style:none;
+  margin:18px 0 0;
+  padding:0;
+  display:grid;
+  gap:10px;
+}
+.lines li{
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  padding:12px 0;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.lines li:last-child{border-bottom:none}
+.lines span:first-child{color:var(--muted)}
+.full{
+  grid-column:1 / -1;
+}
+.footer{
+  margin-top:40px;
+  padding:28px 0 46px;
+  border-top:1px solid rgba(255,255,255,0.08);
+  color:var(--muted);
+}
+.footer-row{
+  display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+}
+.footer-row a:hover{color:var(--white)}
+@media (max-width: 900px){
+  .hero-grid,.section-grid{grid-template-columns:1fr}
+}
+@media (max-width: 640px){
+  .nav-inner{align-items:flex-start;padding:14px 0}
+  .nav-actions{width:100%}
+  .btn{width:100%}
+}
+</style>
+</head>
+<body>
+<nav>
+  <div class="container nav-inner">
+    <a class="nav-logo" href="index.html">
+      <img src="trendingtoolz logo.png" alt="WIZARD TOOLZ">
+      <span>WIZARD TOOLZ</span>
+    </a>
+    <div class="nav-actions">
+      <a class="btn btn-outline" href="tokenomics.html">Tokenomics</a>
+      <a class="btn btn-outline" href="https://pump.fun/coin/HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump" target="_blank" rel="noopener noreferrer">Pump Coin</a>
+      <a class="btn btn-outline" href="https://x.com/wizardtoolz" target="_blank" rel="noopener noreferrer">Follow X</a>
+      <a class="btn btn-primary" href="https://t.me/wizardtoolzbot" target="_blank" rel="noopener noreferrer">Open Bot</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <span class="tag">Whitepaper</span>
+      <h1>WIZARD TOOLZ</h1>
+      <p>
+        WIZARD TOOLZ is a Telegram-first Solana platform for launches, trading, growth, automation, and holder utility.
+        The goal is not to be one more single-purpose bot. The goal is to connect the full operating stack:
+        launch tools, multi-wallet execution, sniper flows, volume tools, burn support, wallet tracking, and the
+        holder-rewards layer that turns real platform activity into visible ecosystem value.
+      </p>
+    </div>
+    <div class="hero-card">
+      <img src="trendingtoolz burn agent image.png" alt="WIZARD TOOLZ whitepaper cover">
+      <div class="hero-meta">
+        <div class="hero-meta-line">
+          <span>Ticker</span>
+          <strong>$WIZTOOLZ</strong>
+        </div>
+        <div class="hero-meta-line">
+          <span>Chain</span>
+          <strong>Solana</strong>
+        </div>
+        <div class="hero-meta-line">
+          <span>Mint / CA</span>
+          <code>HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump</code>
+        </div>
+        <div class="hero-meta-line">
+          <span>Main Site</span>
+          <strong>wizardtoolz.trade</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container section-grid">
+    <div class="section-card">
+      <h3>1. Mission</h3>
+      <p>
+        Most Solana teams still stitch together launches, sniping, wallet management, reactions, chart support, and
+        monitoring through scattered bots and separate service providers. WIZARD TOOLZ is designed to unify that into
+        one product surface with one brand, one workflow, and one economics model.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>2. Product Surface</h3>
+      <p>
+        The current stack includes Reaction Booster, Volume Booster, Buy / Sell, Burn Agent, Holder Booster,
+        FOMO Booster, Magic Sell, Bundle, Launch + Buy, Sniper Wizard, Vanity Wallet, Vision, Wallet Tracker,
+        X Followers, Engagement, Subs + Accounts, Spaces Booster, and Resizer.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>3. Core Idea</h3>
+      <p>
+        WIZARD TOOLZ is built around execution and coordination. Wallet generation, funding, warming, launch actions,
+        post-launch trading, reactions, and monitoring should fit together instead of forcing users to jump between separate tools.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>4. Token Role</h3>
+      <p>
+        $WIZTOOLZ is the ecosystem token. It is tied to burn visibility, future holder rewards, staking utility,
+        launchpad expansion, and the broader platform story. The token is not meant to exist without product support;
+        the product is meant to keep feeding value back into the token layer.
+      </p>
+    </div>
+    <div class="section-card full">
+      <h3>5. Economics Model</h3>
+      <p>
+        Net platform profit is routed through a fixed split:
+      </p>
+      <ul class="lines">
+        <li><span>Treasury</span><strong>50%</strong></li>
+        <li><span>Buyback + Burn</span><strong>25%</strong></li>
+        <li><span>SOL Rewards Vault</span><strong>25%</strong></li>
+      </ul>
+      <p style="margin-top:16px">
+        This model is meant to keep the business funded, keep chart support visible, and keep a growing SOL rewards
+        pool available for holder utility without relying on endless token emissions.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>6. Burn System</h3>
+      <p>
+        Burn visibility matters because it makes the support loop obvious. The burn meter reads live on-chain supply and
+        estimates how much supply has been permanently removed from circulation. It is not meant to be vague marketing.
+        It is meant to show the effect of the system directly.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>7. Rewards Vault</h3>
+      <p>
+        Holder rewards are intended to be paid in SOL from the rewards vault, not through constant token inflation.
+        That makes the holder layer cleaner, more sustainable, and easier to explain. Bigger size and longer hold time
+        create larger reward weight.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>8. Staking Direction</h3>
+      <p>
+        The staking model is designed as a holder-tracking and rewards-claim layer. Claims are manual through the bot.
+        Minimum claim thresholds prevent dust abuse. Time-based weighting rewards conviction over quick in-and-out
+        farming.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>9. Launch Tools</h3>
+      <p>
+        Launch + Buy and Sniper Wizard are built around speed, warmed wallets, and multi-wallet coordination. The goal
+        is to let serious teams and serious traders prepare before the live moment instead of scrambling at the exact
+        second a launch occurs.
+      </p>
+    </div>
+    <div class="section-card">
+      <h3>10. Growth Layer</h3>
+      <p>
+        Growth is part of the platform, not an afterthought. Reaction Booster supports Dex reactions directly through
+        the bot, while the broader service layer covers visibility, engagement, follower packages, and support-driven
+        campaigns that help projects look active, credible, and coordinated from day one.
+      </p>
+    </div>
+    <div class="section-card full">
+      <h3>11. Roadmap</h3>
+      <ul class="lines">
+        <li><span>Current phase</span><strong>Telegram trading, launch, growth, and automation stack</strong></li>
+        <li><span>Next phase</span><strong>Staking, SOL rewards visibility, stronger holder utility</strong></li>
+        <li><span>Expansion</span><strong>Integrated communities, live rooms, launchpad infrastructure</strong></li>
+        <li><span>Longer term</span><strong>Full token surface with creator context, discovery, and post-grad trading</strong></li>
+      </ul>
+    </div>
+    <div class="section-card full">
+      <h3>12. Positioning</h3>
+      <p>
+        WIZARD TOOLZ is meant to feel like infrastructure, not a toy. The platform is built for operators who care about
+        speed, control, coordination, and visible value loops. The whitepaper is intentionally practical: real tools,
+        real flows, real economics, and a clear path from bot utility to a much bigger ecosystem.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container footer-row">
+    <span>WIZARD TOOLZ Whitepaper</span>
+    <span><a href="index.html">Main Site</a></span>
+    <span><a href="tokenomics.html">Tokenomics</a></span>
+    <span><a href="privacy.html">Privacy</a></span>
+    <span><a href="terms.html">Terms</a></span>
+    <span><a href="security.html">Security</a></span>
+  </div>
+</footer>
+</body>
+</html>
