@@ -14121,13 +14121,13 @@ bot.callbackQuery('entry:reaction', async (ctx) => {
     draft.selection.amount = null;
     draft.selection.usingFreeTrial = false;
     draft.selection.target = null;
-    draft.awaitingTargetInput = false;
+    draft.awaitingTargetInput = true;
     draft.payment = createDefaultPaymentState();
     return draft;
   });
 
-  await ctx.answerCallbackQuery();
-  await renderScreen(ctx, 'start', updated);
+  await ctx.answerCallbackQuery({ text: 'Send the DexScreener link.' });
+  await renderScreen(ctx, 'target', updated);
 });
 
 bot.callbackQuery('nav:amount', async (ctx) => {
@@ -17047,11 +17047,14 @@ bot.on('message:text', async (ctx) => {
       return draft;
     });
 
-    const nextKeyboard = updated.selection.button
-      ? hasLaunchAccess(updated)
-        ? makeConfirmKeyboard(updated)
-        : makePaymentKeyboard(updated)
-      : makeButtonKeyboard(updated.selection.button, updated);
+    if (!updated.selection.button) {
+      await renderScreen(ctx, 'start', updated);
+      return;
+    }
+
+    const nextKeyboard = hasLaunchAccess(updated)
+      ? makeConfirmKeyboard(updated)
+      : makePaymentKeyboard(updated);
 
     const summaryLines = [
       'Custom Target Updated',
