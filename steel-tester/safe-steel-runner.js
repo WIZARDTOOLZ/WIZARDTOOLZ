@@ -206,10 +206,41 @@ async function waitForTurnstile(page, timeoutMs) {
   return false;
 }
 
-async function waitForCaptchaSolve(steel, sessionId, sessionIndex, cfg) {
+async function waitForTurnstileToClear(page, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await detectTurnstile(page))) {
+      return true;
+    }
+    await sleep(500);
+  }
+  return false;
+}
+
+async function requestCaptchaSolve(steel, sessionId, sessionIndex) {
+  try {
+    const response = await steel.sessions.captchas.solve(sessionId);
+    log(`Session ${sessionIndex + 1}: requested Steel captcha solve`, response);
+    return response;
+  } catch (error) {
+    log(`Session ${sessionIndex + 1}: captcha solve request failed`, {
+      error: error.message,
+    });
+    return null;
+  }
+}
+
+async function waitForCaptchaSolve(steel, page, sessionId, sessionIndex, cfg) {
   const deadline = Date.now() + cfg.captchaSolveMs;
+  let solveRequested = false;
+  let lastStatusSnapshot = null;
 
   while (Date.now() < deadline) {
+    if (!solveRequested) {
+      await requestCaptchaSolve(steel, sessionId, sessionIndex);
+      solveRequested = true;
+    }
+
     await sleep(cfg.captchaPollMs);
 
     let status;
@@ -222,25 +253,63 @@ async function waitForCaptchaSolve(steel, sessionId, sessionIndex, cfg) {
       continue;
     }
 
-    const pages = status?.pages ?? [];
+    const pages = Array.isArray(status)
+      ? status
+      : (Array.isArray(status?.pages) ? status.pages : []);
+    lastStatusSnapshot = pages;
+
     if (pages.length === 0) {
-      return { solved: true, status: 'auto_resolved' };
+      const stillVisible = await detectTurnstile(page).catch(() => false);
+      if (!stillVisible) {
+        return { solved: true, status: 'auto_resolved' };
+      }
+      continue;
     }
 
     for (const pageStatus of pages) {
-      for (const task of pageStatus?.captchaTasks ?? []) {
-        if (task.status === 'solved') {
-          return { solved: true, status: 'solved', detail: task };
+      const tasks = Array.isArray(pageStatus?.tasks)
+        ? pageStatus.tasks
+        : (Array.isArray(pageStatus?.captchaTasks) ? pageStatus.captchaTasks : []);
+
+      for (const task of tasks) {
+        const taskStatus = task?.status ?? task?.state ?? null;
+
+        if (taskStatus === 'solved' || taskStatus === 'completed') {
+          const cleared = await waitForTurnstileToClear(page, Math.max(cfg.postSolveSettleMs, 8000));
+          return {
+            solved: true,
+            status: cleared ? 'solved' : 'solved_pending_clear',
+            detail: task,
+          };
         }
 
-        if (task.status === 'failed' || task.status === 'error') {
-          return { solved: false, status: task.status, detail: task };
+        if (taskStatus === 'failed' || taskStatus === 'error') {
+          return { solved: false, status: taskStatus, detail: task };
+        }
+      }
+
+      if (!tasks.length && !pageStatus?.isSolvingCaptcha) {
+        const cleared = await waitForTurnstileToClear(page, Math.max(cfg.postSolveSettleMs, 8000));
+        if (cleared) {
+          return {
+            solved: true,
+            status: 'cleared_without_task',
+            detail: pageStatus,
+          };
         }
       }
     }
+
+    if (await waitForTurnstileToClear(page, 1500)) {
+      return { solved: true, status: 'turnstile_cleared', detail: lastStatusSnapshot };
+    }
+
+    if (Date.now() + cfg.captchaPollMs * 2 < deadline) {
+      await requestCaptchaSolve(steel, sessionId, sessionIndex);
+    }
   }
 
-  return { solved: false, status: 'timeout' };
+  return { solved: false, status: 'timeout', detail: lastStatusSnapshot };
 }
 
 async function waitForDexPageReady(page, timeoutMs) {
@@ -1171,11 +1240,19 @@ async function runSingleSession(index, cfg, steel) {
       result.turnstileDetected = true;
       log(`Session ${index + 1}: Turnstile detected, waiting for Steel solve`);
 
-      const solveResult = await waitForCaptchaSolve(steel, session.id, index, cfg);
+      const solveResult = await waitForCaptchaSolve(steel, page, session.id, index, cfg);
       log(`Session ${index + 1}: captcha solve result`, solveResult);
 
       if (!solveResult.solved) {
         throw new Error(`Steel captcha solve failed: ${solveResult.status}`);
+      }
+
+      const turnstileStillVisible = await detectTurnstile(page).catch(() => false);
+      if (turnstileStillVisible) {
+        log(`Session ${index + 1}: Turnstile still visible after solve, forcing extra settle`, {
+          status: solveResult.status,
+        });
+        await sleep(Math.max(cfg.postSolveSettleMs, 6000));
       }
 
       await sleep(cfg.postSolveSettleMs);
