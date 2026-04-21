@@ -1164,6 +1164,7 @@ function createDefaultSniperWizard(userId = null) {
     walletAddress: wallet.address,
     walletSecretKeyB64: wallet.secretKeyB64,
     walletSecretKeyBase58: wallet.secretKeyBase58,
+    walletSource: 'generated',
     walletCount: SNIPER_DEFAULT_WALLET_COUNT,
     workerWallets: Array.from(
       { length: SNIPER_DEFAULT_WALLET_COUNT },
@@ -1702,6 +1703,7 @@ function normalizeSniperWizard(order = {}, userId = 'anonymous') {
   const walletCount = Number.isInteger(order.walletCount)
     ? Math.min(SNIPER_MAX_WALLET_COUNT, Math.max(SNIPER_MIN_WALLET_COUNT, order.walletCount))
     : SNIPER_DEFAULT_WALLET_COUNT;
+  const walletSource = order?.walletSource === 'imported' ? 'imported' : 'generated';
   return {
     ...defaultState,
     ...(order ?? {}),
@@ -1717,6 +1719,7 @@ function normalizeSniperWizard(order = {}, userId = 'anonymous') {
     walletSecretKeyBase58: typeof order.walletSecretKeyBase58 === 'string'
       ? order.walletSecretKeyBase58
       : defaultState.walletSecretKeyBase58,
+    walletSource,
     privateKeyVisible: Boolean(order.privateKeyVisible),
     snipePercent: Number.isInteger(order.snipePercent)
       ? order.snipePercent
@@ -1727,7 +1730,7 @@ function normalizeSniperWizard(order = {}, userId = 'anonymous') {
         .filter((wallet) => wallet && typeof wallet === 'object')
         .slice(0, walletCount)
         .map((wallet, index) => normalizeLaunchBuyBuyerWallet(wallet, userId, index))
-      : createLaunchBuyBuyerWallets(walletCount, userId),
+      : (walletSource === 'generated' ? createLaunchBuyBuyerWallets(walletCount, userId) : []),
     currentLamports: Number.isInteger(order.currentLamports) ? order.currentLamports : 0,
     currentSol: typeof order.currentSol === 'string' ? order.currentSol : '0',
     totalManagedLamports: Number.isInteger(order.totalManagedLamports) ? order.totalManagedLamports : 0,
@@ -8806,15 +8809,21 @@ function fomoBoosterEditorText(user) {
 }
 
 function sniperWizardPrivateKeyText(order) {
-  if (!order?.walletSecretKeyBase58) {
+  const workerWallets = Array.isArray(order?.workerWallets)
+    ? order.workerWallets.filter((wallet) => wallet?.secretKeyBase58)
+    : [];
+
+  if (workerWallets.length === 0) {
     return '`Not stored`';
   }
 
   if (order.privateKeyVisible) {
-    return `\`${order.walletSecretKeyBase58}\``;
+    return workerWallets
+      .map((wallet, index) => `#${index + 1}: \`${wallet.secretKeyBase58}\``)
+      .join('\n');
   }
 
-  return '`Hidden - use the Show Private Key button to reveal it.`';
+  return '`Hidden - use Show Sniper Keys to reveal them.`';
 }
 
 function sniperWizardPercentLabel(percent) {
@@ -8826,6 +8835,9 @@ function sniperWizardPercentLabel(percent) {
 }
 
 function sniperWizardIsReady(order) {
+  const hasReadySniperWallets = Array.isArray(order?.workerWallets)
+    && order.workerWallets.length === order.walletCount
+    && order.workerWallets.every((wallet) => wallet?.address && wallet?.secretKeyB64);
   return Boolean(
     (order?.sniperMode === 'magic' || order?.sniperMode === 'standard')
     && Number.isInteger(order?.walletCount)
@@ -8837,7 +8849,12 @@ function sniperWizardIsReady(order) {
     && order.snipePercent <= SNIPER_MAX_PERCENT
     && order?.walletAddress
     && order?.walletSecretKeyB64
+    && hasReadySniperWallets
   );
+}
+
+function sniperWalletSourceLabel(order) {
+  return order?.walletSource === 'imported' ? 'Imported wallets' : 'Generated wallets';
 }
 
 function sniperWizardStatusLabel(order) {
@@ -8868,6 +8885,8 @@ function promptForSniperField(field) {
   switch (field) {
     case 'wallet_count':
       return `Send how many sniper wallets to create. Choose ${SNIPER_MIN_WALLET_COUNT} to ${SNIPER_MAX_WALLET_COUNT}.`;
+    case 'worker_keys':
+      return 'Send the sniper wallet private keys, one per line. Base58, base64, or 64-byte JSON arrays all work.';
     case 'target_wallet':
       return 'Send the wallet address you want Sniper Wizard to watch for new launches.';
     case 'custom_percent':
@@ -8937,6 +8956,14 @@ function makeSniperWizardKeyboard(user) {
   keyboard.row();
   keyboard.text(`\u{1F45B} Wallets: ${order.walletCount || SNIPER_DEFAULT_WALLET_COUNT}`, 'sniper:set:wallet_count');
   keyboard.row();
+  keyboard.text(order.walletSource === 'generated' ? '\u2705 Generated Wallets' : 'Generated Wallets', 'sniper:set:wallet_source:generated');
+  keyboard.text(order.walletSource === 'imported' ? '\u2705 Import Wallets' : 'Import Wallets', 'sniper:set:wallet_source:imported');
+  keyboard.row();
+  keyboard.text(
+    order.walletSource === 'imported' ? '\u{1F511} Paste Sniper Keys' : '\u{1F503} Regenerate Wallets',
+    'sniper:set:worker_keys',
+  );
+  keyboard.row();
   keyboard.text(
     order.targetWalletAddress ? '\u{1F3AF} Update Target Wallet' : '\u{1F3AF} Set Target Wallet',
     'sniper:set:target_wallet',
@@ -8955,7 +8982,7 @@ function makeSniperWizardKeyboard(user) {
   );
   keyboard.row();
   keyboard.text(
-    order.privateKeyVisible ? '\u{1F648} Hide Private Key' : '\u{1F441}\uFE0F Show Private Key',
+    order.privateKeyVisible ? '\u{1F648} Hide Sniper Keys' : '\u{1F441}\uFE0F Show Sniper Keys',
     'sniper:key:toggle',
   );
   keyboard.row();
@@ -9011,6 +9038,9 @@ function sniperWizardEditorText(user) {
     '- The bot gives you one deposit wallet plus your chosen number of sniper wallets',
     '- Normal mode spreads funds directly to those sniper wallets',
     '- Magic mode uses the hidden routing path before the sniper wallets are armed',
+    '- The deposit wallet is for funding, recovery, and withdraws',
+    '- The sniper wallets are the wallets that actually try to buy',
+    '- You can generate sniper wallets or import your own',
     '- Funding early lets the worker warm those wallets before the live trigger, which improves speed and makes wallet flow look less freshly staged on-chain',
     '- Once armed, it keeps watching that wallet for a fresh launch',
     '- When a launch is detected, it tries to buy immediately across the funded sniper wallets',
@@ -9020,6 +9050,7 @@ function sniperWizardEditorText(user) {
     '\u{1F4CB} *Setup*',
     `- Status: *${sniperWizardStatusLabel(order)}*`,
     `- Mode: *${sniperModeLabel(order.sniperMode)}*`,
+    `- Wallet source: *${sniperWalletSourceLabel(order)}*`,
     `- Sniper wallets: *${order.walletCount || SNIPER_DEFAULT_WALLET_COUNT}*`,
     `- Target wallet: ${order.targetWalletAddress ? `\`${order.targetWalletAddress}\`` : '*Not set*'}`,
     `- Snipe size: *${sniperWizardPercentLabel(order.snipePercent)}*`,
@@ -9030,8 +9061,7 @@ function sniperWizardEditorText(user) {
     `- Total managed balance: *${formatSolAmountFromLamports(order.totalManagedLamports || 0)} SOL*`,
     `- Planned snipe size right now: *${formatSolAmountFromLamports(plannedLamports)} SOL*`,
     `- Gas reserve on deposit wallet: *${formatSolAmountFromLamports(SNIPER_GAS_RESERVE_LAMPORTS)} SOL*`,
-    `- Stored private key: ${sniperWizardPrivateKeyText(order)}`,
-    '- Never share the private key with support. Treat it like a live hot wallet.',
+    '- This wallet funds and recovers the sniper wallets. It is not the actual buyer wallet.',
     '- Best practice: fund early and let the bot warm the sniper wallets before you start watching.',
     '',
     '\u{1F4B8} *Fees*',
@@ -9043,6 +9073,9 @@ function sniperWizardEditorText(user) {
     ...(order.routingStatus ? ['', '\u{1F9FE} *Routing*', `- Routing status: *${order.routingStatus}*`] : []),
     ...(order.routingDepositAddress ? [`- Routing deposit wallet: \`${order.routingDepositAddress}\``] : []),
     ...(workerPreview.length > 0 ? ['', '\u{1F45B} *Sniper Wallet Preview*', ...workerPreview] : []),
+    '',
+    '\u{1F511} *Sniper Wallet Keys*',
+    sniperWizardPrivateKeyText(order),
     '',
     '\u{1F4B1} *Trading Desk Link*',
     '- Sniper wallets are synced into Buy / Sell automatically so you can trade them later.',
@@ -9064,7 +9097,7 @@ function sniperWizardEditorText(user) {
       : (
         sniperWizardIsReady(order)
           ? 'Fund early if possible, refresh once the wallet is topped up, and let the bot warm the sniper wallets before you start watching for the fastest fire.'
-          : 'Choose Normal or Magic mode, set the wallet count, target wallet, and snipe percentage to arm this wizard.'
+          : 'Choose Normal or Magic mode, choose generated or imported sniper wallets, set the wallet count, target wallet, and snipe percentage to arm this wizard.'
       ),
   ].join('\n');
 }
@@ -15005,6 +15038,54 @@ bot.callbackQuery('sniper:set:wallet_count', async (ctx) => {
   await renderScreen(ctx, 'sniper_wizard', updated);
 });
 
+bot.callbackQuery(/^sniper:set:wallet_source:(generated|imported)$/, async (ctx) => {
+  const walletSource = ctx.match[1];
+  const updated = await updateUserState(String(ctx.from.id), (draft) => {
+    const current = normalizeSniperWizard(draft.sniperWizard, draft.telegramId);
+    draft.sniperWizard = normalizeSniperWizard({
+      ...current,
+      walletSource,
+      workerWallets: walletSource === 'generated'
+        ? createLaunchBuyBuyerWallets(current.walletCount, draft.telegramId)
+        : [],
+      awaitingField: walletSource === 'imported' ? 'worker_keys' : null,
+      privateKeyVisible: false,
+      updatedAt: new Date().toISOString(),
+    }, draft.telegramId);
+    syncSniperWizardTradingDesk(draft, { selectFirst: true });
+    return draft;
+  });
+  await ctx.answerCallbackQuery({
+    text: walletSource === 'imported'
+      ? 'Import mode selected. Paste the sniper wallet keys next.'
+      : 'Generated sniper wallets selected.',
+  });
+  await renderScreen(ctx, 'sniper_wizard', updated);
+});
+
+bot.callbackQuery('sniper:set:worker_keys', async (ctx) => {
+  const updated = await updateUserState(String(ctx.from.id), (draft) => {
+    const current = normalizeSniperWizard(draft.sniperWizard, draft.telegramId);
+    draft.sniperWizard = normalizeSniperWizard({
+      ...current,
+      workerWallets: current.walletSource === 'generated'
+        ? createLaunchBuyBuyerWallets(current.walletCount, draft.telegramId)
+        : current.workerWallets,
+      awaitingField: current.walletSource === 'generated' ? null : 'worker_keys',
+      privateKeyVisible: false,
+      updatedAt: new Date().toISOString(),
+    }, draft.telegramId);
+    syncSniperWizardTradingDesk(draft, { selectFirst: true });
+    return draft;
+  });
+  await ctx.answerCallbackQuery({
+    text: updated.sniperWizard.walletSource === 'generated'
+      ? 'Generated sniper wallets refreshed.'
+      : promptForSniperField('worker_keys'),
+  });
+  await renderScreen(ctx, 'sniper_wizard', updated);
+});
+
 bot.callbackQuery(/^sniper:set:percent:(25|50|75|100)$/, async (ctx) => {
   const percent = Number.parseInt(ctx.match[1], 10);
   const updated = await updateUserState(String(ctx.from.id), (draft) => {
@@ -15046,7 +15127,7 @@ bot.callbackQuery('sniper:key:toggle', async (ctx) => {
     return draft;
   });
   await ctx.answerCallbackQuery({
-    text: updated.sniperWizard.privateKeyVisible ? 'Private key revealed.' : 'Private key hidden.',
+    text: updated.sniperWizard.privateKeyVisible ? 'Sniper wallet keys revealed.' : 'Sniper wallet keys hidden.',
   });
   await renderScreen(ctx, 'sniper_wizard', updated);
 });
@@ -15083,7 +15164,7 @@ bot.callbackQuery('sniper:toggle', async (ctx) => {
 
 bot.callbackQuery('sniper:locked:toggle', async (ctx) => {
   const user = await getUserState(String(ctx.from.id));
-  await ctx.answerCallbackQuery({ text: 'Set the target wallet and snipe percentage first.' });
+  await ctx.answerCallbackQuery({ text: 'Set the mode, sniper wallets, target wallet, and snipe percentage first.' });
   await renderScreen(ctx, 'sniper_wizard', user);
 });
 
@@ -18369,7 +18450,19 @@ bot.on('message:text', async (ctx) => {
           switch (current.awaitingField) {
             case 'wallet_count':
               next.walletCount = parseSniperWalletCountInput(candidate);
-              next.workerWallets = createLaunchBuyBuyerWallets(next.walletCount, draft.telegramId);
+              next.workerWallets = current.walletSource === 'generated'
+                ? createLaunchBuyBuyerWallets(next.walletCount, draft.telegramId)
+                : [];
+              if (current.walletSource === 'imported') {
+                next.awaitingField = 'worker_keys';
+              }
+              break;
+            case 'worker_keys':
+              next.walletSource = 'imported';
+              next.workerWallets = parseLaunchBuyPrivateKeysInput(candidate, current.walletCount).map((wallet, index) => ({
+                ...wallet,
+                label: `Sniper ${(index + 1).toString().padStart(2, '0')}`,
+              }));
               break;
             case 'target_wallet':
               next.targetWalletAddress = normalizePublicKey(candidate, 'Target wallet');
