@@ -788,22 +788,35 @@ async function waitForVerifiedReaction(page, cfg, initialDomState, timeoutMs) {
 }
 
 async function waitForReactionConfirmation(page, reactionKey, timeoutMs) {
-  const response = await page.waitForResponse(async (candidate) => {
-    if (!candidate.url().includes(REACTION_ENDPOINT_FRAGMENT)) {
-      return false;
-    }
+  let response;
+  try {
+    response = await page.waitForResponse(async (candidate) => {
+      if (!candidate.url().includes(REACTION_ENDPOINT_FRAGMENT)) {
+        return false;
+      }
 
-    if (candidate.request().method() !== 'POST') {
-      return false;
-    }
+      if (candidate.request().method() !== 'POST') {
+        return false;
+      }
 
-    const postData = candidate.request().postData() || '';
-    if (!postData.includes(`"emoji":"${reactionKey}"`)) {
-      return false;
-    }
+      const postData = candidate.request().postData() || '';
+      if (!postData.includes(`"emoji":"${reactionKey}"`)) {
+        return false;
+      }
 
-    return true;
-  }, { timeout: timeoutMs });
+      return true;
+    }, { timeout: timeoutMs });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (
+      message.includes('Target page, context or browser has been closed')
+      || message.includes('Page closed')
+      || message.includes('Browser has been closed')
+    ) {
+      throw new Error('Reaction response wait ended because the page closed.');
+    }
+    throw error;
+  }
 
   const payload = await response.json().catch(() => null);
   const confirmedReaction = payload?.userReaction?.reaction || null;
@@ -839,6 +852,13 @@ async function attemptNativeUiRecClick(page, cfg, baselineDomState) {
   await sleep(Math.max(cfg.postClickSettleMs, 500));
 
   return Promise.any([confirmationPromise, verificationPromise]);
+}
+
+async function prepareReactionRowForRetry(page, cfg) {
+  await waitForDexPageReady(page, Math.max(cfg.dexReadyWaitMs, 30000));
+  const reactionRowState = await waitForReactionRowReady(page, cfg.buttonKey, Math.max(cfg.dexReadyWaitMs, 30000));
+  const domState = await getReactionDomState(page, cfg.buttonKey);
+  return { reactionRowState, domState };
 }
 
 async function runSingleSession(index, cfg, steel) {
@@ -921,10 +941,6 @@ async function runSingleSession(index, cfg, steel) {
     const button = page.locator(`button[data-reaction-target="${cfg.buttonKey}"]`);
     await button.waitFor({ state: 'attached', timeout: cfg.buttonWaitMs });
     const preClickStart = Date.now();
-    const confirmationPromise = waitForReactionConfirmation(page, cfg.reactionKey, cfg.uiFallbackWaitMs)
-      .then((value) => ({ source: 'response', value }));
-    const verificationPromise = waitForVerifiedReaction(page, cfg, initialDomState, cfg.uiFallbackWaitMs)
-      .then((value) => ({ source: 'verification', value }));
     const clickGeometry = await clickMarkedReactionButton(page, cfg.buttonKey);
     result.clicked = true;
     result.timingsMs.preClick = elapsedMs(preClickStart);
@@ -949,13 +965,19 @@ async function runSingleSession(index, cfg, steel) {
       }
 
       await sleep(cfg.postSolveSettleMs);
-      const reclickBaseline = await getReactionDomState(page, cfg.buttonKey);
+      const retryState = await prepareReactionRowForRetry(page, cfg);
+      const reclickBaseline = retryState.domState;
       log(`Session ${index + 1}: retrying reaction after Steel solve`, {
+        row: retryState.reactionRowState,
         dom: reclickBaseline,
       });
       raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
     } else {
       try {
+        const confirmationPromise = waitForReactionConfirmation(page, cfg.reactionKey, cfg.uiFallbackWaitMs)
+          .then((value) => ({ source: 'response', value }));
+        const verificationPromise = waitForVerifiedReaction(page, cfg, initialDomState, cfg.uiFallbackWaitMs)
+          .then((value) => ({ source: 'verification', value }));
         raceOutcome = await Promise.any([
           confirmationPromise,
           verificationPromise,
@@ -964,7 +986,8 @@ async function runSingleSession(index, cfg, steel) {
         log(`Session ${index + 1}: initial confirmation missed, retrying native click`, {
           error: error?.message || String(error),
         });
-        const reclickBaseline = await getReactionDomState(page, cfg.buttonKey);
+        const retryState = await prepareReactionRowForRetry(page, cfg);
+        const reclickBaseline = retryState.domState;
         raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
       }
     }
