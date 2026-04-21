@@ -17000,6 +17000,50 @@ bot.on('message:text', async (ctx) => {
   const user = await getUserState(userId);
   const activeAgent = getActiveBurnAgent(user);
 
+  if (user.awaitingTargetInput) {
+    const candidate = ctx.message.text.trim();
+    let parsed;
+    try {
+      parsed = new URL(candidate);
+    } catch {
+      await ctx.reply(
+        'That is not a valid full URL. Send something like `https://example.com/path`.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      await ctx.reply('Only `http` and `https` targets are allowed.', {
+        parse_mode: 'Markdown',
+      });
+      return;
+    }
+
+    const updated = await updateUserState(userId, (draft) => {
+      draft.selection.target = parsed.toString();
+      draft.awaitingTargetInput = false;
+      return draft;
+    });
+
+    await ctx.reply(
+      [
+        '*Custom Target Updated*',
+        '',
+        selectionSnapshot(updated),
+      ].join('\n'),
+      {
+        parse_mode: 'Markdown',
+        reply_markup: updated.selection.button
+          ? hasLaunchAccess(updated)
+            ? makeConfirmKeyboard(updated)
+            : makePaymentKeyboard(updated)
+          : makeButtonKeyboard(updated.selection.button, updated),
+      },
+    );
+    return;
+  }
+
   if (user.xFollowers?.awaitingField === 'target') {
     const raw = ctx.message.text.trim();
     const normalizedTarget = raw.startsWith('@')
@@ -18236,50 +18280,6 @@ bot.on('message:text', async (ctx) => {
     return;
   }
 
-  if (!user.awaitingTargetInput) {
-    return;
-  }
-
-  const candidate = ctx.message.text.trim();
-  let parsed;
-  try {
-    parsed = new URL(candidate);
-  } catch {
-    await ctx.reply(
-      'That is not a valid full URL. Send something like `https://example.com/path`.',
-      { parse_mode: 'Markdown' },
-    );
-    return;
-  }
-
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    await ctx.reply('Only `http` and `https` targets are allowed.', {
-      parse_mode: 'Markdown',
-    });
-    return;
-  }
-
-  const updated = await updateUserState(userId, (draft) => {
-    draft.selection.target = parsed.toString();
-    draft.awaitingTargetInput = false;
-    return draft;
-  });
-
-  await ctx.reply(
-    [
-      '*Custom Target Updated*',
-      '',
-      selectionSnapshot(updated),
-    ].join('\n'),
-    {
-      parse_mode: 'Markdown',
-      reply_markup: updated.selection.button
-        ? hasLaunchAccess(updated)
-          ? makeConfirmKeyboard(updated)
-          : makePaymentKeyboard(updated)
-        : makeButtonKeyboard(updated.selection.button, updated),
-    },
-  );
 });
 
 bot.on('message:photo', async (ctx) => {
