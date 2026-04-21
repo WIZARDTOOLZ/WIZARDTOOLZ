@@ -204,7 +204,7 @@ async function waitForCaptchaSolve(steel, sessionId, sessionIndex, cfg) {
 
     let status;
     try {
-      status = await steel.sessions.getSessionCaptchaStatus(sessionId);
+      status = await steel.sessions.captchas.status(sessionId);
     } catch (error) {
       log(`Session ${sessionIndex + 1}: captcha poll failed, retrying`, {
         error: error.message,
