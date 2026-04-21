@@ -6265,8 +6265,6 @@ makeHomeKeyboard = function makeHomeKeyboard() {
     .text('\u2139\uFE0F Info', 'nav:help')
     .text('\u{1F4CA} Status', 'nav:status')
     .row()
-    .url('\u{1FA99} Pump Coin', 'https://pump.fun/coin/HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump')
-    .row()
     .url('\u{1F4AC} Community', 'https://t.me/wizardtoolz')
     .url('\u{1F514} Alerts', 'https://t.me/wizardtoolz_alerts')
     .row()
@@ -6429,7 +6427,7 @@ homeText = function homeText() {
     `\u{1F91D} Need help? https://t.me/${SUPPORT_USERNAME}`,
     '\u{1F4AC} Community chat: https://t.me/wizardtoolz',
     '\u{1F514} Alerts channel: https://t.me/wizardtoolz_alerts',
-    '\u{1FA99} Pump coin link is available in the menu button below.',
+    '🪙 Live Pump coin: https://pump.fun/coin/HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump',
     '',
     'Ready? Choose a service below.',
   ].join('\n');
