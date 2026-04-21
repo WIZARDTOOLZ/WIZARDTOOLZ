@@ -243,10 +243,15 @@ async function waitForDexPageReady(page, timeoutMs) {
     const buttonCount = await page.locator('button.chakra-button').count().catch(() => 0);
     const stillVerifying =
       title === 'Just a moment...' ||
+      title.startsWith('Loading ') ||
       lowerBody.includes('performing security verification') ||
-      lowerBody.includes('turnstile solving...');
+      lowerBody.includes('turnstile solving...') ||
+      lowerBody.includes('loading https://dexscreener.com');
 
-    if (!stillVerifying && buttonCount > 0) {
+    const titleLooksReady =
+      title.includes('DEX Screener') && !title.startsWith('Loading ');
+
+    if (!stillVerifying && buttonCount > 0 && titleLooksReady) {
       return { title, buttonCount };
     }
 
@@ -837,14 +842,14 @@ async function attemptNativeUiRecClick(page, cfg, baselineDomState) {
   const confirmationPromise = waitForReactionConfirmation(
     page,
     cfg.reactionKey,
-    Math.max(cfg.uiFallbackWaitMs, 45000),
+    Math.min(Math.max(cfg.uiFallbackWaitMs, 12000), 12000),
   ).then((value) => ({ source: 'response', value }));
 
   const verificationPromise = waitForVerifiedReaction(
     page,
     cfg,
     baselineDomState,
-    Math.max(cfg.uiFallbackWaitMs, 45000),
+    Math.min(Math.max(cfg.uiFallbackWaitMs, 12000), 12000),
   ).then((value) => ({ source: 'verification', value }));
 
   await markReactionButton(page, cfg.buttonKey);
@@ -988,6 +993,10 @@ async function runSingleSession(index, cfg, steel) {
         });
         const retryState = await prepareReactionRowForRetry(page, cfg);
         const reclickBaseline = retryState.domState;
+        log(`Session ${index + 1}: retry state prepared`, {
+          row: retryState.reactionRowState,
+          dom: reclickBaseline,
+        });
         raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
       }
     }
