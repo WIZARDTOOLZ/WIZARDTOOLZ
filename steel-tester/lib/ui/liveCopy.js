@@ -57,7 +57,7 @@ export function buildBuySellText({
 }
 
 export function buildHomeText({ cfg, menuDivider, supportUsername }) {
-  const safeSupport = escapeMarkdownInline(`@${supportUsername}`);
+  const supportLink = `https://t.me/${supportUsername}`;
   return [
     '\u{1F44B} *Welcome to WIZARD TOOLZ*',
     '',
@@ -78,10 +78,10 @@ export function buildHomeText({ cfg, menuDivider, supportUsername }) {
     '\u{1F4CA} Professional execution | Free trial available on supported routes | Built to be simple on the surface and powerful underneath',
     '\u{1FA99} Live Pump coin: `https://pump.fun/coin/HqvX73Yi99DbUr4NTR5a4HycrCT7waMDePruW5XQpump`',
     `\u{1F4B8} Built-in handled trading routes use *${formatBpsPercent(cfg.tradingHandlingFeeBps)}* per trade, lower than every competitor we track, and platform profit is routed *50% to treasury, 25% to buyback + burn, and 25% to the rewards vault*`,
-    `\u{1F91D} Need help? Message support: \`${safeSupport}\``,
+    `\u{1F91D} Need help? Message support: ${supportLink}`,
     '\u{1F4AC} Community chat: https://t.me/wizardtoolz',
     '\u{1F514} Alerts channel: https://t.me/wizardtoolz_alerts',
-    `\u{1F6E0}\uFE0F Want custom tools built for you? Message support: \`${safeSupport}\``,
+    `\u{1F6E0}\uFE0F Want custom tools built for you? Message support: ${supportLink}`,
     '',
     'Choose a service below to get started.',
   ].join('\n');
@@ -92,7 +92,7 @@ export function buildHomeText({ cfg, menuDivider, supportUsername }) {
 }
 
 export function buildHelpText({ cfg, menuDivider, supportUsername }) {
-  const safeSupport = escapeMarkdownInline(`@${supportUsername}`);
+  const supportLink = `https://t.me/${supportUsername}`;
   return [
     '\u2139\uFE0F *Help & Info*',
     '',
@@ -120,10 +120,10 @@ export function buildHelpText({ cfg, menuDivider, supportUsername }) {
     '',
     menuDivider,
     '\u{1F91D} *Support*',
-    `Questions or issues: \`${safeSupport}\``,
+    `Questions or issues: ${supportLink}`,
     'Community chat: https://t.me/wizardtoolz',
     'Alerts channel: https://t.me/wizardtoolz_alerts',
-    `Custom tools: message \`${safeSupport}\``,
+    `Custom tools: message ${supportLink}`,
     '',
     'Tap a feature button below for a deeper plain-English walkthrough.',
   ].join('\n');
