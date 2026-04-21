@@ -13567,17 +13567,58 @@ async function runJob(user, onProgress) {
 
     let stdout = '';
     let stderr = '';
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
 
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
+    const emitProgressLine = async (rawLine, source = 'stdout') => {
+      const line = String(rawLine || '').trim();
+      if (!line) {
+        return;
+      }
+
+      const normalized = line
+        .replace(/^\[[^\]]+\]\s*/, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!normalized) {
+        return;
+      }
+
+      const label = source === 'stderr' ? `ERR: ${normalized}` : normalized;
+      await onProgress(label.slice(0, 280));
+    };
+
+    const flushChunk = async (buffer, chunkText, source) => {
+      const combined = `${buffer}${chunkText}`;
+      const parts = combined.split(/\r?\n/);
+      const nextBuffer = parts.pop() ?? '';
+      for (const part of parts) {
+        await emitProgressLine(part, source);
+      }
+      return nextBuffer;
+    };
+
+    child.stdout.on('data', async (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      stdoutBuffer = await flushChunk(stdoutBuffer, text, 'stdout');
     });
 
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
+    child.stderr.on('data', async (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      stderrBuffer = await flushChunk(stderrBuffer, text, 'stderr');
     });
 
     child.on('error', reject);
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
+      if (stdoutBuffer.trim()) {
+        await emitProgressLine(stdoutBuffer, 'stdout');
+      }
+      if (stderrBuffer.trim()) {
+        await emitProgressLine(stderrBuffer, 'stderr');
+      }
       resolve({
         ok: code === 0,
         code,
@@ -13621,8 +13662,14 @@ async function handleRun(ctx) {
 
   try {
     const updates = [];
+    let lastEditAt = 0;
     const result = await runJob(user, async (message) => {
-      updates.push(message);
+      updates.push(escapeMarkdown(message));
+      const now = Date.now();
+      if (now - lastEditAt < 700) {
+        return;
+      }
+      lastEditAt = now;
       await ctx.api.editMessageText(
         ctx.chat.id,
         statusMessage.message_id,
