@@ -431,7 +431,44 @@ async function waitForReactionRowReady(page, buttonKey, timeoutMs) {
 
 async function clickMarkedReactionButton(page, buttonKey) {
   const geometry = await page.evaluate((target) => {
-    const button = document.querySelector(`button[data-reaction-target="${target}"]`);
+    const buttons = Array.from(document.querySelectorAll('button.chakra-button'));
+    const isMatch = (button) => {
+      if (target === 'rocket') {
+        return Array.from(button.querySelectorAll('polygon')).some((node) =>
+          (node.getAttribute('points') || '').includes('3.77,71.73'));
+      }
+
+      if (target === 'fire') {
+        return Array.from(button.querySelectorAll('path')).some((node) =>
+          (node.getAttribute('d') || '').includes('M35.56,40.73'));
+      }
+
+      if (target === 'poop') {
+        return Array.from(button.querySelectorAll('path')).some((node) =>
+          (node.getAttribute('d') || '').includes('M118.89,75.13'));
+      }
+
+      if (target === 'flag') {
+        return Array.from(button.querySelectorAll('path')).some((node) =>
+          (node.getAttribute('d') || '').includes('M8.04,3.32'));
+      }
+
+      return false;
+    };
+
+    const button = buttons.find((candidate) => {
+      if (!isMatch(candidate)) {
+        return false;
+      }
+
+      const rect = candidate.getBoundingClientRect();
+      const style = window.getComputedStyle(candidate);
+      return style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        style.opacity !== '0' &&
+        rect.width > 0 &&
+        rect.height > 0;
+    });
     if (!button) {
       return null;
     }
@@ -943,8 +980,6 @@ async function runSingleSession(index, cfg, steel) {
     });
 
     const buttonMatch = await markReactionButton(page, cfg.buttonKey);
-    const button = page.locator(`button[data-reaction-target="${cfg.buttonKey}"]`);
-    await button.waitFor({ state: 'attached', timeout: cfg.buttonWaitMs });
     const preClickStart = Date.now();
     const clickGeometry = await clickMarkedReactionButton(page, cfg.buttonKey);
     result.clicked = true;
@@ -1026,6 +1061,8 @@ async function runSingleSession(index, cfg, steel) {
         source: verified.verificationSource,
         reaction: result.confirmedReaction,
         totals: result.reactionTotals,
+        baselineCount: initialDomState?.count ?? null,
+        currentCount: verified.domState?.count ?? null,
         turnstileDetected: result.turnstileDetected,
       });
     }
