@@ -173,6 +173,16 @@ function formatElapsed(ms) {
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
+function isRetryableNavigationError(error) {
+  const message = String(error?.message || error);
+  return (
+    message.includes('ERR_EMPTY_RESPONSE') ||
+    message.includes('ERR_TIMED_OUT') ||
+    message.includes('ERR_CONNECTION_RESET') ||
+    message.includes('ERR_CONNECTION_CLOSED')
+  );
+}
+
 async function ensureOutputDir() {
   await fs.mkdir(OUTPUT_DIR, { recursive: true });
 }
@@ -903,6 +913,33 @@ async function prepareReactionRowForRetry(page, cfg) {
   return { reactionRowState, domState };
 }
 
+async function attemptReactionWithRetries(page, cfg, initialBaseline, sessionIndex, phaseLabel, maxTries = 3) {
+  let lastError = null;
+  let latestBaseline = initialBaseline;
+
+  for (let attempt = 1; attempt <= maxTries; attempt += 1) {
+    const retryState = await prepareReactionRowForRetry(page, cfg);
+    latestBaseline = retryState.domState;
+    log(`Session ${sessionIndex + 1}: ${phaseLabel} attempt ${attempt}`, {
+      row: retryState.reactionRowState,
+      dom: latestBaseline,
+    });
+
+    try {
+      return await attemptNativeUiRecClick(page, cfg, latestBaseline);
+    } catch (error) {
+      lastError = error;
+      log(`Session ${sessionIndex + 1}: ${phaseLabel} attempt ${attempt} failed`, {
+        error: error?.message || String(error),
+        baselineCount: latestBaseline?.count ?? null,
+      });
+      await sleep(1000);
+    }
+  }
+
+  throw lastError || new Error(`${phaseLabel} failed after ${maxTries} attempts.`);
+}
+
 async function runSingleSession(index, cfg, steel) {
   const sessionStart = Date.now();
   const result = {
@@ -957,10 +994,24 @@ async function runSingleSession(index, cfg, steel) {
 
     log(`Session ${index + 1}: navigating`, { target: cfg.targetUrl });
     const navigationStart = Date.now();
-    await page.goto(cfg.targetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: cfg.navigationTimeoutMs,
-    });
+    try {
+      await page.goto(cfg.targetUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: cfg.navigationTimeoutMs,
+      });
+    } catch (error) {
+      if (!isRetryableNavigationError(error)) {
+        throw error;
+      }
+      log(`Session ${index + 1}: navigation failed, retrying once`, {
+        error: error?.message || String(error),
+      });
+      await sleep(1500);
+      await page.goto(cfg.targetUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: cfg.navigationTimeoutMs,
+      });
+    }
     result.timingsMs.navigation = elapsedMs(navigationStart);
 
     const pageReadyStart = Date.now();
@@ -1005,13 +1056,14 @@ async function runSingleSession(index, cfg, steel) {
       }
 
       await sleep(cfg.postSolveSettleMs);
-      const retryState = await prepareReactionRowForRetry(page, cfg);
-      const reclickBaseline = retryState.domState;
-      log(`Session ${index + 1}: retrying reaction after Steel solve`, {
-        row: retryState.reactionRowState,
-        dom: reclickBaseline,
-      });
-      raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
+      raceOutcome = await attemptReactionWithRetries(
+        page,
+        cfg,
+        initialDomState,
+        index,
+        'post-solve reaction retry',
+        3,
+      );
     } else {
       try {
         const confirmationPromise = waitForReactionConfirmation(page, cfg.reactionKey, cfg.uiFallbackWaitMs)
@@ -1026,13 +1078,14 @@ async function runSingleSession(index, cfg, steel) {
         log(`Session ${index + 1}: initial confirmation missed, retrying native click`, {
           error: error?.message || String(error),
         });
-        const retryState = await prepareReactionRowForRetry(page, cfg);
-        const reclickBaseline = retryState.domState;
-        log(`Session ${index + 1}: retry state prepared`, {
-          row: retryState.reactionRowState,
-          dom: reclickBaseline,
-        });
-        raceOutcome = await attemptNativeUiRecClick(page, cfg, reclickBaseline);
+        raceOutcome = await attemptReactionWithRetries(
+          page,
+          cfg,
+          initialDomState,
+          index,
+          'native retry',
+          2,
+        );
       }
     }
     result.timingsMs.postClickToConfirm = elapsedMs(postClickStart);
