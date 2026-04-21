@@ -13785,7 +13785,7 @@ async function handleRun(ctx) {
           '*Latest updates*',
           ...updates.slice(-6),
         ].join('\n'),
-        { parse_mode: 'Markdown' },
+        { parse_mode: 'Markdown', reply_markup: makeRunningJobKeyboard() },
       );
     });
 

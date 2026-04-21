@@ -882,6 +882,10 @@ async function runSingleSession(index, cfg, steel) {
     let rescuedByBeacon = false;
     let rescueTokenLength = null;
     let rescueAcceptedTransport = null;
+    let resolveRescueEvent = null;
+    const rescueEventPromise = new Promise((resolve) => {
+      resolveRescueEvent = resolve;
+    });
     page.on('requestfailed', async (request) => {
       try {
         if (!request.url().includes(REACTION_ENDPOINT_FRAGMENT) || rescuedByBeacon) {
@@ -907,8 +911,10 @@ async function runSingleSession(index, cfg, steel) {
           ? `${rescue.acceptedTransport}-rescue`
           : 'rescue-failed';
         log(`Session ${index + 1}: rescue attempts completed`, rescue);
+        resolveRescueEvent?.();
       } catch (error) {
         log(`Session ${index + 1}: beacon rescue failed`, { error: error.message });
+        resolveRescueEvent?.();
       }
     });
 
@@ -937,6 +943,11 @@ async function runSingleSession(index, cfg, steel) {
         verificationPromise,
       ]);
     } catch (error) {
+      await Promise.race([
+        rescueEventPromise,
+        sleep(8000),
+      ]);
+
       const rescueWasAccepted = result.submissionAttempts.some((attempt) => attempt?.ok);
       if (rescueWasAccepted || rescueAcceptedTransport || siteKey) {
         log(`Session ${index + 1}: primary confirmation race failed, retrying extended verification`, {
