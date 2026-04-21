@@ -588,7 +588,7 @@ async function waitForReactionRowReady(page, buttonKey, timeoutMs) {
 }
 
 async function clickMarkedReactionButton(page, buttonKey) {
-  const geometry = await page.evaluate((target) => {
+  const clickResult = await page.evaluate((target) => {
     const buttons = Array.from(document.querySelectorAll('button.chakra-button'));
     const isMatch = (button) => {
       if (target === 'rocket') {
@@ -614,26 +614,92 @@ async function clickMarkedReactionButton(page, buttonKey) {
       return false;
     };
 
-    const button = buttons.find((candidate) => {
-      if (!isMatch(candidate)) {
-        return false;
-      }
+    const parseCount = (text) => {
+      const match = String(text || '').match(/(\d[\d,]*)\s*$/);
+      return match ? Number.parseInt(match[1].replace(/,/g, ''), 10) : null;
+    };
 
-      const rect = candidate.getBoundingClientRect();
-      const style = window.getComputedStyle(candidate);
-      return style.display !== 'none' &&
-        style.visibility !== 'hidden' &&
-        style.opacity !== '0' &&
-        rect.width > 0 &&
-        rect.height > 0;
-    });
-    if (!button) {
+    const candidates = buttons
+      .map((candidate, index) => {
+        if (!isMatch(candidate)) {
+          return null;
+        }
+
+        const rect = candidate.getBoundingClientRect();
+        const style = window.getComputedStyle(candidate);
+        const visible = style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.opacity !== '0' &&
+          rect.width > 0 &&
+          rect.height > 0;
+
+        if (!visible) {
+          return null;
+        }
+
+        return {
+          candidate,
+          index,
+          rect,
+          text: (candidate.textContent || '').trim(),
+          count: parseCount(candidate.textContent || ''),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const aHasCount = typeof a.count === 'number';
+        const bHasCount = typeof b.count === 'number';
+        if (aHasCount !== bHasCount) {
+          return aHasCount ? -1 : 1;
+        }
+        if (a.rect.top !== b.rect.top) {
+          return a.rect.top - b.rect.top;
+        }
+        return a.rect.left - b.rect.left;
+      });
+
+    const match = candidates[0];
+    if (!match) {
       return null;
     }
 
+    const button = match.candidate;
     button.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     const rect = button.getBoundingClientRect();
+
+    const pointerOptions = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: rect.left + (rect.width / 2),
+      clientY: rect.top + (rect.height / 2),
+      button: 0,
+      buttons: 1,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+      view: window,
+    };
+
+    button.dispatchEvent(new PointerEvent('pointerover', pointerOptions));
+    button.dispatchEvent(new MouseEvent('mouseover', pointerOptions));
+    button.dispatchEvent(new PointerEvent('pointerenter', pointerOptions));
+    button.dispatchEvent(new MouseEvent('mouseenter', pointerOptions));
+    button.dispatchEvent(new PointerEvent('pointermove', pointerOptions));
+    button.dispatchEvent(new MouseEvent('mousemove', pointerOptions));
+    button.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+    button.dispatchEvent(new MouseEvent('mousedown', pointerOptions));
+    button.focus?.();
+    button.dispatchEvent(new PointerEvent('pointerup', pointerOptions));
+    button.dispatchEvent(new MouseEvent('mouseup', pointerOptions));
+    button.dispatchEvent(new MouseEvent('click', pointerOptions));
+    button.click?.();
+
     return {
+      clickedInPage: true,
+      index: match.index,
+      text: match.text,
+      count: match.count,
       x: rect.left + (rect.width / 2),
       y: rect.top + (rect.height / 2),
       width: rect.width,
@@ -641,17 +707,13 @@ async function clickMarkedReactionButton(page, buttonKey) {
     };
   }, buttonKey);
 
-  if (!geometry || !Number.isFinite(geometry.x) || !Number.isFinite(geometry.y)) {
+  if (!clickResult || !Number.isFinite(clickResult.x) || !Number.isFinite(clickResult.y)) {
     throw new Error(`Could not resolve click geometry for ${buttonKey} reaction button.`);
   }
 
-  await page.mouse.move(geometry.x, geometry.y, { steps: 10 });
-  await sleep(120);
-  await page.mouse.down();
-  await sleep(60);
-  await page.mouse.up();
+  await sleep(250);
 
-  return geometry;
+  return clickResult;
 }
 
 async function getReactionDomState(page, buttonKey) {
