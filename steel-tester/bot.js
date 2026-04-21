@@ -13569,6 +13569,91 @@ async function runJob(user, onProgress) {
     let stderr = '';
     let stdoutBuffer = '';
     let stderrBuffer = '';
+    let progressChain = Promise.resolve();
+
+    const simplifyRunnerProgressLine = (line) => {
+      const trimmed = String(line || '').trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      let match = trimmed.match(/^Session (\d+): Dex page ready /);
+      if (match) {
+        return `Session ${match[1]}: Dex page ready`;
+      }
+
+      match = trimmed.match(/^Session (\d+): reaction row ready .*"text":"([^"]+)"/);
+      if (match) {
+        return `Session ${match[1]}: reaction row ready (${match[2]})`;
+      }
+
+      match = trimmed.match(/^Session (\d+): reaction baseline /);
+      if (match) {
+        return `Session ${match[1]}: reaction baseline ready`;
+      }
+
+      match = trimmed.match(/^Session (\d+): UI click .*$/);
+      if (match) {
+        return `Session ${match[1]}: clicked reaction`;
+      }
+
+      match = trimmed.match(/^Session (\d+): reaction POST failed, attempting beacon rescue /);
+      if (match) {
+        return `Session ${match[1]}: native submit failed, trying rescue`;
+      }
+
+      match = trimmed.match(/^Session (\d+): rescue attempts completed /);
+      if (match) {
+        return `Session ${match[1]}: rescue submitted`;
+      }
+
+      match = trimmed.match(/^Session (\d+): primary confirmation race failed, retrying extended verification /);
+      if (match) {
+        return `Session ${match[1]}: retrying verification`;
+      }
+
+      match = trimmed.match(/^Session (\d+): manual Turnstile rescue completed /);
+      if (match) {
+        return `Session ${match[1]}: challenge solved, retrying`;
+      }
+
+      match = trimmed.match(/^Session (\d+): retrying native UI click after challenge\/rescue /);
+      if (match) {
+        return `Session ${match[1]}: retrying native click`;
+      }
+
+      match = trimmed.match(/^Session (\d+): reaction confirmed /);
+      if (match) {
+        return `Session ${match[1]}: reaction confirmed`;
+      }
+
+      match = trimmed.match(/^Session (\d+): reaction verified after delayed state sync /);
+      if (match) {
+        return `Session ${match[1]}: reaction verified`;
+      }
+
+      match = trimmed.match(/^Session (\d+): failed /);
+      if (match) {
+        return `Session ${match[1]}: failed`;
+      }
+
+      match = trimmed.match(/^Session (\d+): released Steel session$/);
+      if (match) {
+        return `Session ${match[1]}: session released`;
+      }
+
+      match = trimmed.match(/^Reaction progress .*"confirmed":(\d+),"requested":(\d+),"remaining":(\d+),"nextAttempt":(\d+)/);
+      if (match) {
+        return `Progress: ${match[1]}/${match[2]} confirmed, ${match[3]} remaining, starting attempt ${match[4]}`;
+      }
+
+      match = trimmed.match(/^Reaction target not fully met before attempt cap /);
+      if (match) {
+        return 'Reaction target not fully met before attempt cap';
+      }
+
+      return trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed;
+    };
 
     const emitProgressLine = async (rawLine, source = 'stdout') => {
       const line = String(rawLine || '').trim();
@@ -13585,7 +13670,12 @@ async function runJob(user, onProgress) {
         return;
       }
 
-      const label = source === 'stderr' ? `ERR: ${normalized}` : normalized;
+      const simplified = simplifyRunnerProgressLine(normalized);
+      if (!simplified) {
+        return;
+      }
+
+      const label = source === 'stderr' ? `ERR: ${simplified}` : simplified;
       await onProgress(label.slice(0, 280));
     };
 
@@ -13599,20 +13689,25 @@ async function runJob(user, onProgress) {
       return nextBuffer;
     };
 
-    child.stdout.on('data', async (chunk) => {
+    child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      stdoutBuffer = await flushChunk(stdoutBuffer, text, 'stdout');
+      progressChain = progressChain.then(async () => {
+        stdoutBuffer = await flushChunk(stdoutBuffer, text, 'stdout');
+      }).catch(() => {});
     });
 
-    child.stderr.on('data', async (chunk) => {
+    child.stderr.on('data', (chunk) => {
       const text = chunk.toString();
       stderr += text;
-      stderrBuffer = await flushChunk(stderrBuffer, text, 'stderr');
+      progressChain = progressChain.then(async () => {
+        stderrBuffer = await flushChunk(stderrBuffer, text, 'stderr');
+      }).catch(() => {});
     });
 
     child.on('error', reject);
     child.on('close', async (code) => {
+      await progressChain;
       if (stdoutBuffer.trim()) {
         await emitProgressLine(stdoutBuffer, 'stdout');
       }
