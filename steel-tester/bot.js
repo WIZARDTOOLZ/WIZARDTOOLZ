@@ -58,6 +58,8 @@ const SNIPER_DEFAULT_WALLET_COUNT = 1;
 const SNIPER_MIN_WALLET_COUNT = 1;
 const SNIPER_MAX_WALLET_COUNT = 20;
 const SNIPER_GAS_RESERVE_LAMPORTS = Math.floor(0.01 * LAMPORTS_PER_SOL);
+const HOLDER_BOOSTER_TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
+const HOLDER_BOOSTER_TX_BUFFER_LAMPORTS = 10_000;
 const SNIPER_MAGIC_SETUP_FEE_LAMPORTS = Math.floor(0.1 * LAMPORTS_PER_SOL);
 const MAGIC_BUNDLE_DEFAULT_WALLET_COUNT = 5;
 const MAGIC_BUNDLE_MIN_WALLET_COUNT = 1;
@@ -2525,6 +2527,13 @@ function createDefaultStakingState() {
     currentWeightLabel: 'Starting',
     lastError: null,
   };
+}
+
+function calculateHolderBoosterRequiredLamports(holderCount) {
+  const safeHolderCount = Number.isInteger(holderCount) ? Math.max(0, holderCount) : 0;
+  return (safeHolderCount * HOLDER_BOOSTER_TOKEN_ACCOUNT_RENT_LAMPORTS)
+    + (safeHolderCount * HOLDER_BOOSTER_TX_BUFFER_LAMPORTS)
+    + 20_000;
 }
 
 function normalizePaymentState(payment = {}) {
@@ -5619,11 +5628,11 @@ function holderBoosterText(user) {
     '',
     promptLine || (
       order.walletAddress
-        ? 'Deposit the exact SOL + token amount shown above. Holder Booster is a one-time fanout feature with no sweep-back path.'
+        ? 'Deposit the exact SOL + token amount shown above. Holder Booster uses that SOL for network rent and transfer fees across the fresh holder wallets.'
         : 'Set the mint and holder count to generate the one-time deposit wallet.'
     ),
     order.walletAddress
-      ? 'Any extra tokens left in the deposit wallet are not part of the payout flow, so deposit the exact token count only.'
+      ? 'Any leftover SOL or tokens stay in the deposit wallet after the fanout completes.'
       : null,
   ].filter(Boolean).join('\n');
 }
@@ -18542,12 +18551,13 @@ bot.on('message:text', async (ctx) => {
           }
           const holderCount = parseHolderCountInput(candidate);
           const wallet = generateSolanaWallet();
+          const requiredLamports = calculateHolderBoosterRequiredLamports(holderCount);
           current.holderCount = holderCount;
           current.walletAddress = wallet.address;
           current.walletSecretKeyB64 = wallet.secretKeyB64;
           current.walletSecretKeyBase58 = wallet.secretKeyBase58;
-          current.requiredLamports = Math.round(holderCount * 0.10 * LAMPORTS_PER_SOL);
-          current.requiredSol = (holderCount * 0.10).toFixed(2);
+          current.requiredLamports = requiredLamports;
+          current.requiredSol = formatSolAmountFromLamports(requiredLamports);
           current.requiredTokenAmountRaw = String(holderCount);
           current.childWallets = createHolderRecipientWallets(holderCount);
           current.awaitingField = null;

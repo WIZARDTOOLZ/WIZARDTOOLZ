@@ -117,6 +117,8 @@ const SNIPER_JITO_TIP_LAMPORTS = parsePositiveInt(
 const SNIPER_GAS_RESERVE_LAMPORTS = parseSolToLamports(
   process.env.SNIPER_GAS_RESERVE_SOL || '0.01',
 );
+const HOLDER_BOOSTER_TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
+const HOLDER_BOOSTER_TX_BUFFER_LAMPORTS = 10_000;
 const SNIPER_FUNDING_TOLERANCE_LAMPORTS = parsePositiveInt(
   process.env.SNIPER_FUNDING_TOLERANCE_LAMPORTS,
   500_000,
@@ -6177,7 +6179,7 @@ async function scanHolderBoosters() {
       const requiredTokenRaw = oneWholeTokenRaw * BigInt(order.holderCount);
       const requiredLamports = Number.isInteger(order.requiredLamports)
         ? order.requiredLamports
-        : Math.round(order.holderCount * 0.10 * LAMPORTS_PER_SOL);
+        : calculateHolderBoosterRequiredLamports(order.holderCount);
       const hasRequiredFunding = balanceLamports >= requiredLamports && tokenBalanceRaw >= requiredTokenRaw;
 
       await updateHolderBooster(userId, (draft) => ({
@@ -6185,7 +6187,7 @@ async function scanHolderBoosters() {
         tokenDecimals: mintMetadata.decimals,
         tokenProgram: mintMetadata.tokenProgram.toBase58(),
         requiredLamports,
-        requiredSol: (order.holderCount * 0.10).toFixed(2),
+        requiredSol: formatSolAmountFromLamports(requiredLamports),
         requiredTokenAmountRaw: requiredTokenRaw.toString(),
         currentLamports: balanceLamports,
         currentSol: formatSolAmountFromLamports(balanceLamports),
@@ -6201,10 +6203,6 @@ async function scanHolderBoosters() {
 
       if (!hasRequiredFunding) {
         continue;
-      }
-
-      if (!cfg.treasuryWalletAddress || !cfg.devWalletAddress) {
-        throw new Error('Holder Booster requires TREASURY_WALLET_ADDRESS and DEV_WALLET_ADDRESS.');
       }
 
       let workingOrder = normalizeHolderBoosterRecord((await readStore()).users?.[userId]?.holderBooster ?? order);
@@ -6239,43 +6237,6 @@ async function scanHolderBoosters() {
         }));
       }
 
-      const remainingLamports = await connection.getBalance(signer.publicKey, 'confirmed');
-      const distributableLamports = Math.max(0, remainingLamports - SPLIT_FEE_BUFFER_LAMPORTS);
-      let payoutSignature = null;
-      if (distributableLamports > 0) {
-        const treasuryLamports = Math.floor(distributableLamports / 2);
-        const devLamports = distributableLamports - treasuryLamports;
-        const latestBlockhash = await connection.getLatestBlockhash('confirmed');
-        const transaction = new Transaction({
-          feePayer: signer.publicKey,
-          recentBlockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-        }).add(
-          SystemProgram.transfer({
-            fromPubkey: signer.publicKey,
-            toPubkey: new PublicKey(cfg.treasuryWalletAddress),
-            lamports: treasuryLamports,
-          }),
-          SystemProgram.transfer({
-            fromPubkey: signer.publicKey,
-            toPubkey: new PublicKey(cfg.devWalletAddress),
-            lamports: devLamports,
-          }),
-        );
-
-        payoutSignature = await connection.sendTransaction(transaction, [signer], {
-          skipPreflight: true,
-          preflightCommitment: 'confirmed',
-          maxRetries: 3,
-        });
-        await confirmTransactionByMetadata(
-          payoutSignature,
-          latestBlockhash.blockhash,
-          latestBlockhash.lastValidBlockHeight,
-          'confirmed',
-        );
-      }
-
       const finalLamports = await connection.getBalance(signer.publicKey, 'confirmed');
       const finalTokenBalanceRaw = await getOwnedMintRawBalance(signer.publicKey, workingOrder.mintAddress);
       await updateHolderBooster(userId, (draft) => ({
@@ -6287,15 +6248,15 @@ async function scanHolderBoosters() {
         processedWalletCount: draft.childWallets.length,
         status: 'completed',
         completedAt: new Date().toISOString(),
-        treasurySignature: payoutSignature,
-        devSignature: payoutSignature,
+        treasurySignature: null,
+        devSignature: null,
         lastBalanceCheckAt: new Date().toISOString(),
         lastError: null,
       }));
       await appendUserActivityLog(userId, {
         scope: `holder_booster:${workingOrder.id}`,
         level: 'info',
-        message: `Holder Booster completed: ${workingOrder.holderCount} holder wallets funded and remaining SOL split to treasury/dev.`,
+        message: `Holder Booster completed: ${workingOrder.holderCount} holder wallets funded and leftover SOL stayed in the deposit wallet.`,
       });
     } catch (error) {
       await updateHolderBooster(userId, (draft) => ({
@@ -7000,6 +6961,13 @@ async function transferMintAmountToWallet(sourceSigner, mintAddress, recipientAd
   );
 
   return sendLegacyTransaction(instructions, sourceSigner);
+}
+
+function calculateHolderBoosterRequiredLamports(holderCount) {
+  const safeHolderCount = Number.isInteger(holderCount) ? Math.max(0, holderCount) : 0;
+  return (safeHolderCount * HOLDER_BOOSTER_TOKEN_ACCOUNT_RENT_LAMPORTS)
+    + (safeHolderCount * HOLDER_BOOSTER_TX_BUFFER_LAMPORTS)
+    + SPLIT_FEE_BUFFER_LAMPORTS;
 }
 
 async function burnMintTokens(signer, mintAddress, requestedAmountRaw = null) {
